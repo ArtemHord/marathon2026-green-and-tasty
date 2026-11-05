@@ -1,0 +1,70 @@
+<section class="split" aria-labelledby="split-bill-title" [attr.aria-busy]="state() === 'loading'">
+  <header class="split-header">
+    <h2 id="split-bill-title" class="split-title">Split bill</h2>
+    @if (canCopy()) {
+      <button
+        type="button"
+        class="button button--secondary copy-button"
+        aria-label="Copy summary of the split bill to the clipboard"
+        (click)="copy()"
+      >Copy summary</button>
+    }
+  </header>
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="split-state" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        Loading split bill…
+      </p>
+    }
+
+    @case ('error') {
+      <div class="split-state split-state--error" role="alert">
+        <p class="split-state-title">Couldn't load the split bill.</p>
+        <button type="button" class="button button--secondary" (click)="load()">Try again</button>
+      </div>
+    }
+
+    @case ('ready') {
+      @if (isEmpty()) {
+        <p class="split-state split-state--empty">No dishes to split yet</p>
+      } @else {
+        <ul class="people">
+          @for (row of rows(); track row.key) {
+            <li class="person">
+              <div class="person-header">
+                <h3 class="person-name">{{ row.name }}</h3>
+                @if (row.isOwner) {
+                  <span class="person-role">Owner</span>
+                }
+                <span class="person-total">{{ row.total | currency }}</span>
+              </div>
+              @if (row.dishes.length) {
+                <ul class="dishes" [attr.aria-label]="'Dishes of ' + row.name">
+                  @for (dish of row.dishes; track dish.dishId) {
+                    <li class="dish">
+                      <span class="dish-name">{{ dish.label }}</span>
+                      <span class="dish-amount">{{ dish.amount | currency }}</span>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p class="dish-empty">No dishes</p>
+              }
+            </li>
+          }
+        </ul>
+
+        @if (excludedNote()) {
+          <p class="excluded">{{ excludedNote() }}</p>
+        }
+
+        <p class="split-total">
+          <span>Total</span>
+          <span class="split-total-value">{{ total() | currency }}</span>
+        </p>
+      }
+    }
+  }
+</section>

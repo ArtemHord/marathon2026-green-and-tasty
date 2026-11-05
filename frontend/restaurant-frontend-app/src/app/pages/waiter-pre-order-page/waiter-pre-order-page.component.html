@@ -18,6 +18,11 @@
     >
       <div dish-footer class="pre-order-footer">
         <div class="pre-order-quantity">Quantity: {{ item.quantity }}</div>
+        @if (guestLabels[item.dish.id]; as guestsLine) {
+          <p class="pre-order-guests">
+            <span class="sr-only">Ordered by: </span>{{ guestsLine }}
+          </p>
+        }
         <div class="preorder-actions">
           <app-custom-button
             class="btn-cancel"

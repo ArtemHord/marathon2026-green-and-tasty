@@ -20,6 +20,7 @@ import {
   throwError,
 } from 'rxjs';
 import { ParticipantCardComponent } from '@app/components/group-orders/participant-card/participant-card.component';
+import { SplitBillComponent } from '@app/components/group-orders/split-bill/split-bill.component';
 import { GroupSessionsResponse } from '@app/models/group-orders/group-sessions-response.model';
 import { GroupReservationStatus } from '@app/models/group-orders/group-status.model';
 import { Participant } from '@app/models/group-orders/participant.model';
@@ -41,7 +42,7 @@ const STATUS_LABELS: Record<GroupReservationStatus, string> = {
 
 @Component({
   selector: 'app-group-order-page',
-  imports: [ParticipantCardComponent, ModalComponent, RouterLink, CurrencyPipe, DatePipe],
+  imports: [ParticipantCardComponent, SplitBillComponent, ModalComponent, RouterLink, CurrencyPipe, DatePipe],
   templateUrl: './group-order-page.component.html',
   styleUrl: './group-order-page.component.scss',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -49,7 +50,7 @@ const STATUS_LABELS: Record<GroupReservationStatus, string> = {
 export class GroupOrderPageComponent {
   private readonly service = inject(GroupOrdersService);
   private readonly toast = inject(ToastService);
-  private readonly reservationId = inject(ActivatedRoute).snapshot.paramMap.get('reservationId') ?? '';
+  protected readonly reservationId = inject(ActivatedRoute).snapshot.paramMap.get('reservationId') ?? '';
 
   private loadSub?: Subscription;
   private syncSub?: Subscription;
@@ -86,6 +87,11 @@ export class GroupOrderPageComponent {
   );
 
   readonly isOpen = computed(() => this.status() === 'Open');
+  /**
+   * «Sent to Restaurant»: показуємо блок Split bill. Він сам вантажить розбивку один раз при появі —
+   * і після submit у цій вкладці, і при відкритті вже відправленої групи (polling тут уже зупинений).
+   */
+  readonly isSent = computed(() => this.status() === 'Submitted');
   readonly statusLabel = computed(() => {
     const status = this.status();
     return status ? STATUS_LABELS[status] : '';

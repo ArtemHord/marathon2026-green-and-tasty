@@ -2,6 +2,7 @@ import { HttpClient, HttpContext } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable, map, switchMap } from 'rxjs';
 import { SKIP_ERROR_TOAST } from '@app/auth/skip-error-toast.context';
+import { BillSplitResponse } from '@app/models/group-orders/bill-split.model';
 import { GroupSessionsResponse } from '@app/models/group-orders/group-sessions-response.model';
 import { GroupStatusResponse } from '@app/models/group-orders/group-status.model';
 import { OwnerSessionResponse } from '@app/models/group-orders/owner-session.model';
@@ -63,6 +64,17 @@ export class GroupOrdersService {
   removeSession$(groupReservationId: string, guestSessionId: string): Observable<GroupSessionsResponse> {
     return this.http.delete<GroupSessionsResponse>(
       `${this.groupUrl(groupReservationId)}/sessions/${encodeURIComponent(guestSessionId)}`,
+    );
+  }
+
+  /**
+   * GET /reservations/{reservationId}/bill-split.
+   * Завжди тихий: блок «Split bill» сам показує помилку з «Try again», toast від interceptor-а не потрібен.
+   */
+  getBillSplit$(reservationId: string): Observable<BillSplitResponse> {
+    return this.http.get<BillSplitResponse>(
+      `${this.baseUrl}/reservations/${encodeURIComponent(reservationId)}/bill-split`,
+      { context: this.context({ silent: true }) },
     );
   }
 

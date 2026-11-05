@@ -1,0 +1,184 @@
+@use 'app/shared/styles/abstracts/colors' as color;
+@use 'app/shared/styles/abstracts/typography' as typography;
+
+:host {
+  display: block;
+}
+
+// Same look as the participant card / consolidated block (homework-design owner flow).
+.split {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: color.$neutral-0;
+  border-radius: 12px;
+}
+
+.split-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.split-title {
+  @include typography.h4;
+}
+
+.copy-button {
+  @include typography.button-l;
+  min-height: 40px;
+  padding: 8px 16px;
+}
+
+.split-state {
+  @include typography.body;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 12px;
+  text-align: center;
+
+  &--error {
+    border: 1px solid color.$red-400;
+    border-radius: 8px;
+  }
+
+  &--empty {
+    color: color.$neutral-600;
+  }
+}
+
+p.split-state:not(.split-state--empty) {
+  flex-direction: row;
+  justify-content: center;
+}
+
+.split-state-title {
+  @include typography.h5;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 3px solid color.$green-150;
+  border-top-color: color.$green-600;
+  border-radius: 50%;
+  animation: split-spin 0.9s linear infinite;
+}
+
+@keyframes split-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.people,
+.dishes {
+  list-style: none;
+}
+
+.person {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color.$neutral-100;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.person-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.person-name {
+  @include typography.h5;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.person-role {
+  @include typography.caption;
+  padding: 2px 8px;
+  color: color.$green-800;
+  background: color.$green-100;
+  border: 1px solid color.$green-150;
+  border-radius: 8px;
+}
+
+.person-total {
+  @include typography.body-bold;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.dish {
+  @include typography.body;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: color.$neutral-600;
+}
+
+.dish-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dish-amount {
+  white-space: nowrap;
+}
+
+.dish-empty,
+.excluded {
+  @include typography.caption;
+  color: color.$neutral-600;
+}
+
+.excluded {
+  padding: 0 12px;
+}
+
+.split-total {
+  @include typography.h5;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 12px 0;
+  border-top: 1px solid color.$neutral-100;
+
+  span {
+    font: inherit;
+  }
+}
+
+.split-total-value {
+  color: color.$green-800;
+}
+
+@media (max-width: 480px) {
+  .copy-button {
+    width: 100%;
+  }
+
+  .person,
+  .split-total {
+    padding-inline: 4px;
+  }
+}

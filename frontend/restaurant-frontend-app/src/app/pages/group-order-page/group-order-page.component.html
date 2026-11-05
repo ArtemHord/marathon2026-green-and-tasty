@@ -110,6 +110,10 @@
         </section>
       }
 
+      @if (isSent()) {
+        <app-split-bill [reservationId]="reservationId" />
+      }
+
       <footer class="summary">
         <p class="grand-total">
           <span>Grand Total</span>

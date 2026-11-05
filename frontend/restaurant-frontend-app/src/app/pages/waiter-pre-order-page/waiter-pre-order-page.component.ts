@@ -13,6 +13,7 @@ import { DishCardComponent } from '@app/shared/custom-components/dish-card/dish-
 import { firstValueFrom } from 'rxjs';
 import { WaiterPreOrderState } from '@app/models/orders/order.model';
 import { CustomButtonComponent } from '@app/shared/custom-components/custom-button/custom-button.component';
+import { formatGuestShares } from '@app/shared/helpers/bill-split-helpers';
 
 @Component({
   selector: 'app-waiter-pre-order-page',
@@ -24,6 +25,8 @@ import { CustomButtonComponent } from '@app/shared/custom-components/custom-butt
 export class WaiterPreOrderPageComponent implements OnInit {
   reservationLabel = '';
   orderItems: OrderItem[] = [];
+  /** dishId → «Andrii ×2 · Olena ×1»; лише для позицій групового pre-order з guests. */
+  guestLabels: Record<string, string> = {};
 
   reservationId = '';
   createdByName = '';
@@ -68,12 +71,24 @@ export class WaiterPreOrderPageComponent implements OnInit {
         console.log('ORDER FROM SERVER:', JSON.stringify(order, null, 2));
 
         this.orderItems = order.orderItems ?? [];
+        this.guestLabels = this.buildGuestLabels(this.orderItems);
         this.reservationTime = order.reservationTime || '';
         // this.refreshOrder();
       })
       .catch((err) => {
         console.error('Error loading order:', err);
       });
+  }
+
+  private buildGuestLabels(items: OrderItem[]): Record<string, string> {
+    const labels: Record<string, string> = {};
+    for (const item of items) {
+      const label = formatGuestShares(item.guests);
+      if (label) {
+        labels[item.dish.id] = label;
+      }
+    }
+    return labels;
   }
 
   onRemove(dishId: string) {
