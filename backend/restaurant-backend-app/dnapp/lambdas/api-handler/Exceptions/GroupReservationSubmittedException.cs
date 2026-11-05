@@ -1,3 +1,3 @@
-﻿namespace APIHandler.Exceptions;
+namespace APIHandler.Exceptions;
 
-public class GroupReservationSubmittedException() : ValidationException("Group reservation was submitted.");
+public class GroupReservationSubmittedException(string message = "Group reservation was submitted.") : ValidationException(message);

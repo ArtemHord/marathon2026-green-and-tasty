@@ -49,9 +49,22 @@ public class OrderRepository : IOrderRepository
 
         var results = await _dynamoDbContext.QueryAsync<Order>(reservationId, config).GetNextSetAsync();
 
-        return results.FirstOrDefault(o => o.Status != OrderStatus.Cancelled);
+        // The GSI is eventually consistent. Every save is version-checked (Order.Version), so the order is re-read by its
+        // primary key with ConsistentRead: callers then modify the latest data and only a truly concurrent write conflicts.
+        foreach (var candidate in results)
+        {
+            var order = await GetOrderByIdAsync(candidate.OrderId, candidate.CustomerId);
+            if (order is not null && order.Status != OrderStatus.Cancelled)
+                return order;
+        }
+
+        return null;
     }
 
+    /// <summary>
+    /// Saves the order with an optimistic-locking check on <see cref="Order.Version"/>.
+    /// Throws <see cref="Amazon.DynamoDBv2.Model.ConditionalCheckFailedException"/> if the order was changed since it was read.
+    /// </summary>
     public async Task SaveOrderAsync(Order order)
     {
         await _dynamoDbContext.SaveAsync(order, DynamoConfig.SaveConfig(OrdersTableName));

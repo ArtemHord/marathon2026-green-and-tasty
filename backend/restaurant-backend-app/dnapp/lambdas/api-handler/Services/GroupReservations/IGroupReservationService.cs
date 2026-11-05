@@ -16,4 +16,6 @@ public interface IGroupReservationService
     Task CreateGroupReservationIfDoesNotExistAsync(string userId, string reservationId);
     Task CloseGroupReservationAsync(string reservationId);
     Task<GetGroupInviteTokenResponse> GetGroupReservationInviteTokenAsync(string reservationId);
+    Task<OwnerGuestSessionIdResponse> GetOwnerGuestSessionIdAsync(string userId, string reservationId);
+    Task<IReadOnlyList<SubmittedGroupDish>> SubmitGroupPreOrderAsync(string userId, string groupReservationId, string reservationId);
 }

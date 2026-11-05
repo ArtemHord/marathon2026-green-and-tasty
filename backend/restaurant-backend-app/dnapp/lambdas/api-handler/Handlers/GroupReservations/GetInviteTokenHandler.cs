@@ -25,6 +25,10 @@ public class GetInviteTokenHandler(IGroupReservationService service) : IApiReque
         {
             return ResponseBuilder.CreateErrorResponse(404, exception.Message, context.Logger, exception);
         }
+        catch (GroupReservationNotFoundException exception)
+        {
+            return ResponseBuilder.CreateErrorResponse(404, exception.Message, context.Logger, exception);
+        }
         catch(ValidationException exception)
         {
             return ResponseBuilder.CreateErrorCodeResponse(exception);

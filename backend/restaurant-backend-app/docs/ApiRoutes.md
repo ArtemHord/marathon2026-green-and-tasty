@@ -520,12 +520,18 @@ Response: `200 OK`
 ```
 
 ### `GET` /reservations/{reservationId}/invite-token
+Returns the invite token of the reservation's group **in any group / reservation state** (`Open`, full, `Submitted`, `Closed`):
+the Owner screen resolves its group through `invite-token → /guest/invites/{token}`, including the read-only screen after submit.
+Guests still cannot join a non-open or full group — `POST /guest/sessions` rejects it.
+
 Response: `200 OK`
 ```json
 {
   "token": "string"
 }
 ```
+Errors: `404` reservation not found · `404` the reservation has no group reservation · `400` reservation for one guest
+(`guestCount < 2`). There is no owner check on this endpoint (existing behaviour, unchanged).
 
 ### `GET` /reservations/{reservationId}/feedback
 Response: `200 OK`
@@ -555,10 +561,13 @@ Response: `200 OK`
 ```
 
 ### `GET` /reservations/{reservationId}/guest-session-id
+Owner only (Cognito). Returns the id of the owner's own guest session in the group of this reservation.
+Errors and the lazy creation of the owner session — see [Group pre-order (Owner)](#group-pre-order-owner).
+
 Response: `200 OK`
 ```json
 {
-  "guestSessionId": "string"
+  "guestSessionId": "owner-<groupReservationId>"
 }
 ```
 
@@ -1075,15 +1084,29 @@ Response: `200 OK`
 ## Group & Guest Reservations
 
 ### `GET` /guest/invites/{token}
-Response: `200 OK`
+Public. Returns the group details **in any group state** — it is not a join check. Joining is guarded by
+`POST /guest/sessions` (`400` with `errorCode` `GroupReservationSubmitted` / `GroupReservationExpired` /
+`GuestSessionExpired` / `GuestLimitExceeded`). `Status` and `CanJoin` let the guest UI show "group is full / closed" before joining.
+
+Response: `200 OK` (PascalCase, as serialized today)
 ```json
 {
-  "groupReservationId": "string",
-  "restaurantName": "string",
-  "locationAddress": "string",
-  "startTime": "2026-08-07T19:00:00Z"
+  "GroupReservationId": "string",
+  "LocationId": "string",
+  "RestaurantName": "Green & Tasty",
+  "LocationAddress": "string",
+  "StartTime": "2026-08-07T19:00:00Z",
+  "EndTime": "2026-08-07T20:30:00Z",
+  "MaxGuestCount": 4,
+  "TableNumber": 3,
+  "InviterName": "string",
+  "Status": "Open | Submitted | Closed",
+  "CanJoin": true
 }
 ```
+- `CanJoin` = group `Open` **and** reservation `Reserved` **and** joined guests + 1 (owner) < `MaxGuestCount` — the same rules as `POST /guest/sessions`.
+- Errors: `404` unknown token · `400` associated reservation not found.
+- Before F2/F3 this endpoint returned `400` for a full group (`GuestLimitExceeded`) and for a non-open group (`GroupReservationExpired`).
 
 ### `POST` /guest/sessions
 Request body:
@@ -1179,31 +1202,127 @@ Response: 200 OK
 }
 ```
 
-### `POST` /group-reservations/{groupReservationId}/submit
-Response: 200 OK
+## Group pre-order (Owner)
+
+All endpoints below are behind `cognito_authorizer` (`Authorization: Bearer <idToken>`).
+**Owner** = the customer whose reservation the group reservation belongs to (`reservation.customerId == sub`).
+
+Error bodies:
+- `401` / `403` / `404` — `{ "error": "<message>" }` (`ResponseBuilder.CreateErrorResponse`);
+- `400` from business rules — `{ "message": "<message>", "errorCode": "<code>" }` (`ResponseBuilder.CreateErrorCodeResponse`);
+  `errorCode` is `GroupReservationSubmitted` for a repeated submit, `GroupReservationExpired` for a closed group, `Unknown` otherwise;
+- `400` from request validation in the handler (missing path parameter / body without `reservationId` / invalid JSON) — `{ "error": "<message>" }`.
+
+| Method and path | Success | Errors |
+|---|---|---|
+| `GET /guest/groups/{groupReservationId}/sessions` | `200` snapshot | `401` no token · `403` not the Owner · `404` group reservation not found · `404` its reservation not found |
+| `GET /reservations/{reservationId}/guest-session-id` | `200 { "guestSessionId": "…" }` | `401` · `403` not the Owner (also for reservations without a customer) · `404` reservation not found · `404` group reservation not found · `404` owner session not found (only when the group is no longer `Open`, see below) |
+| `POST /group-reservations/{groupReservationId}/submit`, body `{ "reservationId": "…" }` | `200 [ { "dishId": "…", "quantity": 3 } ]` | `401` · `403` not the Owner · `404` reservation not found · `404` group reservation not found · `400` body without `reservationId` / invalid JSON · `400` group belongs to another reservation · `400` repeated submit: `"Group pre-order has already been submitted."` · `400` group is `Closed`: `"Group reservation is closed."` · `400` no submitted sessions · `400` submitted sessions contain no dishes · `400` no order for the reservation (or the order is `Cancelled`) |
+| `DELETE /guest/groups/{groupReservationId}/sessions/{guestSessionId}` | `200` updated snapshot | `401` · `403` not the Owner · `404` group reservation not found · `404` guest session not found · `400` session belongs to another group · `400` attempt to remove the owner session |
+
+### Snapshot (`GET …/sessions`, `DELETE …/sessions/{guestSessionId}`)
 ```json
 {
-  "message": "Group reservation pre-order submitted successfully."
+  "participants": [
+    {
+      "id": "owner-<groupReservationId>",
+      "type": "Owner",
+      "name": "Andrii Shevchenko",
+      "items": [],
+      "total": 0,
+      "isSubmitted": false
+    },
+    {
+      "id": "session1",
+      "type": "Guest",
+      "name": "Andrii",
+      "items": [
+        { "dish": { "id": "dish1", "name": "Caesar Salad", "price": 180, "...": "other DishResponse fields" }, "quantity": 2 }
+      ],
+      "total": 360,
+      "isSubmitted": true
+    },
+    {
+      "id": "session2",
+      "type": "Guest",
+      "name": "Olena",
+      "items": [ { "dish": { "id": "dish2", "name": "Tom Yum", "price": 220 }, "quantity": 1 } ],
+      "total": 220,
+      "isSubmitted": false
+    }
+  ],
+  "total": 580
 }
 ```
+- `type` = `Owner` for the session with `isOwnerSession = true`, otherwise `Guest`.
+- `participant.total` = Σ `price × quantity`; `total` = Σ `participant.total` of **all** participants (submitted or not).
+- An empty group → `{ "participants": [], "total": 0 }`.
+- `dish` is the full `DishResponse` (`id`, `name`, `price`, `description`, `dishType`, `weight`, `imageUrl`, `state`, …).
 
-### `GET` /guest/groups/{groupReservationId}/sessions
-Response: 200 OK
-```json
-[
-  {
-    "id": "string",
-    "groupReservationId": "string",
-    "guestName": "string",
-    "status": "string"
-  }
-]
-```
+### Submit — order of actions
+1. Find the reservation from the body (`404`), the group reservation from the path (`404`), check the caller is the Owner (`403`),
+   check the group belongs to that reservation (`400`), check the group status: `Submitted` → `400` "Group pre-order has already been submitted.", `Closed` → `400` "Group reservation is closed.".
+2. Take only sessions with `isSubmitted = true` (the owner session follows the same rule) → `400` if there are none.
+3. Concatenate their dishes and merge by `dishId` (sum of quantities, order of first appearance) → `400` if the list is empty.
+4. Load the order of the reservation (consistent read) → `400` if there is none (or it is `Cancelled`). In memory: for each merged dish,
+   if it is already in the order its quantity is increased, otherwise a new line is added; order → `SubmittedByCustomer`.
+5. **Claim the group**: re-read it by key (consistent), it must still be `Open` (otherwise the same `400`s as in step 1), then a
+   version-checked write `Open → Submitted`. A version conflict → `400` "Group pre-order has already been submitted.".
+6. Version-checked order write. Version conflict (a *different* write to the same order — owner edit/cancel, waiter confirm —
+   because the claim lets only one submit through) → the group is written back to `Open` (version-checked compensation) and
+   `400 { "message": "The pre-order was changed while submitting. Please try again.", "errorCode": "Unknown" }`.
+   Any other failure → the same compensation and the error is returned (`500`).
+7. Response — the merged list from step 3 (not the whole order).
 
-### `DELETE` /guest/groups/{groupReservationId}/sessions/{guestSessionId}
-Response: 200 OK
-```json
-{
-  "message": "Guest session removed from group successfully."
-}
-```
+### Decisions on behaviour not defined by the homework
+- **Repeated submit** → `400` `{ "message": "Group pre-order has already been submitted.", "errorCode": "GroupReservationSubmitted" }`; there is no "unsubmit"/re-merge of a group.
+- **Closed group** (reservation cancelled/finished) → `400` "Group reservation is closed." (`errorCode: GroupReservationExpired`) instead of the "already submitted" message.
+- **Check order on submit**: `404` reservation → `404` group → `403` owner → `400` mismatch → `400` status. A non-owner never learns whether the group belongs to the reservation.
+- **Order lines changed by submit** get `state = Pending` (also an existing line whose quantity was increased): the waiter has to confirm the new quantity.
+- **Cancelled order** is treated as "no order" (`400`).
+- **Concurrent submits** (optimistic locking on both items, no DynamoDB transaction).
+  - `GroupReservation` and `Order` have a nullable `version` attribute (`[DynamoDBVersion]`, `[JsonIgnore]`): old records load with
+    `null`, the first save sets it; every save of these entities is a conditional write.
+  - The group transition `Open → Submitted` (step 5) is single-winner: only one submit can make it, so the guests' dishes are added
+    to the order once however the requests interleave — including "B validated the group before A started, A finished, B continues"
+    (B's consistent re-read sees `Submitted`; if B re-read just before A's claim, B's version-checked claim fails).
+  - The order version check (step 6) protects the order against a concurrent edit between read and write. Such a conflict is not
+    another submit (the claim is single-winner), so the group is reopened and the Owner retries: no "Submitted group without the
+    guests' dishes" state, and no false "already submitted" message.
+  - The reopen is version-checked too: the SDK bumps `Version` on the claimed object after the claim, so the reopen succeeds only
+    if nobody changed the group since; otherwise it is rejected and ignored, and nothing is overwritten.
+  - Why not `TransactWriteItems`: the SDK supports it (`CreateTransactWrite`), but it would bypass `IOrderRepository.SaveOrderAsync` /
+    `IGroupReservationRepository.SaveGroupReservationAsync`, which all order flows and their tests rely on; the claim + compensation
+    gives the same single-submit guarantee with the existing repositories.
+  - Save paths checked for the versions: new items always get a new id (`CreateGroupReservationAsync`, `AddOrderAsync`); every update
+    loads first. Reads from eventually consistent indexes are re-read by key with `ConsistentRead` before a save
+    (`OrderRepository.GetOrderByReservationIdAsync`, `CloseGroupReservationAsync`; the latter also retries up to 3 times on a version conflict).
+  - Remaining non-atomic window: if the order write fails for a reason other than a version conflict *and* the compensation write
+    also fails, the group stays `Submitted` without the guests' dishes in the order.
+- **Submit deliberately does not re-check dish availability (`DishState`) or the pre-order edit window (`EnsurePreOrderEditable`,
+  30 minutes before the start)** — the homework does not require it; guests' carts were validated (`DishState`) when each guest
+  submitted the cart, and a closed/finished reservation closes the group (`400 "Group reservation is closed."`).
+- **Owner session is created lazily.** The backend never created owner sessions on reservation creation, so `GET /reservations/{reservationId}/guest-session-id`
+  creates it on the first call while the group is `Open` (id `owner-<groupReservationId>`, `isOwnerSession = true`, empty cart,
+  `guestName` = the owner's Cognito name or `"Owner"`). Repeated/concurrent calls resolve to the same session. When the group is already
+  `Submitted`/`Closed` and there is no owner session, the endpoint returns `404`.
+- **The owner session is not counted as a joined guest**: guest capacity checks (`POST /guest/sessions`, `CanJoin` of `GET /guest/invites/{token}`) and
+  `currentParticipants` in `GET /guest/groups/{id}/status` count guests only, the owner is always `+1`.
+- **Owner's own dishes**: there is no API that adds dishes to the owner session (guest dish endpoints require a guest session token).
+  The Owner's own pre-order is the regular order (`POST /orders`, `PUT /orders/{reservationId}`); group submit adds the guests' dishes to it.
+- **Snapshot order**: the owner session first, then guests in storage order. Dish lines whose dish no longer exists are skipped (cannot be priced).
+- **DELETE** is allowed in any group status (the frontend is read-only after submit); removing the owner session → `400`.
+- Snapshot responses are camelCase (`participants`, `total`, `id`, `type`, …) as in the homework; before the fix `DELETE` returned PascalCase.
+- **Eventual consistency of the `GroupReservationId` index.** The snapshot after `DELETE` never contains the deleted session even if the
+  index still returns it. If the index does not return an owner session yet, the snapshot (and `guest-session-id`) also look it up by its
+  deterministic id `owner-<groupReservationId>`, so a just-created owner session appears in the first `GET …/sessions` and is not re-created.
+- **Owner screen in any group state** (full / `Submitted` / `Closed`): `GET /reservations/{id}/invite-token` and `GET /guest/invites/{token}`
+  no longer reject non-open or full groups; "full / not Open" checks protect only guest join (`POST /guest/sessions`).
+
+### Known limitations
+- A version conflict in the regular order flows (customer edit/cancel/submit/unsubmit, waiter confirm/cancel dish) — i.e. a truly
+  concurrent write to the same order — returns `409 { "error": "The resource was changed concurrently. Please retry." }`
+  (`ExceptionHandler`, for exceptions a handler does not catch itself); retrying the request succeeds.
+  Group submit handles its conflicts itself and keeps its `400`s.
+- `CloseGroupReservationAsync` (reservation cancelled / status changed) retries a group version conflict 3 times and then throws:
+  `PATCH /reservations/{id}/status` returns `409`, `DELETE /reservations` returns `503` (that handler maps every `AmazonDynamoDBException` to `503`).
