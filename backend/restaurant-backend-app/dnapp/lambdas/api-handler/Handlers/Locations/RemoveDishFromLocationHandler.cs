@@ -21,11 +21,11 @@ public class RemoveDishFromLocationHandler(ILocationService locationService) : I
             return ResponseBuilder.CreateErrorResponse(403, "Forbidden: Only waiters can perform this action.", context.Logger);
         }
 
-        if (request.PathParameters == null ||
-            !request.PathParameters.TryGetValue("locationId", out var locationId) ||
-            !request.PathParameters.TryGetValue("dishId", out var dishId))
+        // path: /locations/{id}/dishes/{dishId} — see GetLocationTablesHandler for why the parameter is "id"
+        if (!request.TryGetPathValue("id", out var locationId) ||
+            !request.TryGetPathValue("dishId", out var dishId))
         {
-            return ResponseBuilder.CreateErrorResponse(400, "Missing 'locationId' or 'dishId' in path parameters.", context.Logger);
+            return ResponseBuilder.CreateErrorResponse(400, "Missing location 'id' or 'dishId' in path parameters.", context.Logger);
         }
 
         try

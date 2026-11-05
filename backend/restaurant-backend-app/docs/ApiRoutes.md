@@ -178,7 +178,7 @@ Response: `200 OK`
 ]
 ```
 
-### `DELETE` /locations/{locationId}/dishes/{dishId}
+### `DELETE` /locations/{id}/dishes/{dishId}
 Response: `200 OK`
 ```json
 {
@@ -709,7 +709,7 @@ Response: `200 OK`
 ]
 ```
 
-### `GET` /locations/{locationId}/tables/all
+### `GET` /locations/{id}/tables/all
 Response: `200 OK`
 ```json
 [

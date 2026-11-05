@@ -247,7 +247,7 @@
           "enable_proxy": true
         }
       },
-      "/locations/{locationId}/dishes/{dishId}": {
+      "/locations/{id}/dishes/{dishId}": {
         "DELETE": {
           "authorization_type": "cognito_authorizer",
           "integration_type": "lambda",
@@ -256,7 +256,7 @@
           "default_error_pattern": true
         }
       },
-      "/locations/{locationId}/tables/all": {
+      "/locations/{id}/tables/all": {
         "GET": {
           "authorization_type": "cognito_authorizer",
           "integration_type": "lambda",

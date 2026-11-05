@@ -13,8 +13,10 @@ public class GetLocationTablesHandler(ITableService tableService) : IApiRequestH
     {
         if (!RoleHelper.IsWaiter(request)) return ResponseBuilder.CreateErrorResponse(403, "Forbidden", context.Logger);
 
-        if (request.PathParameters == null || !request.PathParameters.TryGetValue("locationId", out var locationId))
-            return ResponseBuilder.CreateErrorResponse(400, "Missing 'locationId'", context.Logger);
+        // path: /locations/{id}/tables/all — the location parameter is named "id" like every /locations/{…} resource
+        // (API Gateway does not allow different parameter names at the same path level)
+        if (!request.TryGetPathValue("id", out var locationId))
+            return ResponseBuilder.CreateErrorResponse(400, "Missing location 'id' in path parameters.", context.Logger);
 
         var tables = await tableService.GetAllTablesForLocationAsync(locationId);
         return ResponseBuilder.CreateSuccessResponse(tables);
