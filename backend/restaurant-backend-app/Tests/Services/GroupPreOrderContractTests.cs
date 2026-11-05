@@ -61,7 +61,7 @@ public class GroupPreOrderContractTests
     public GroupPreOrderContractTests()
     {
         _guestSessionService = new GuestSessionService(
-            _groupRepo.Object, _sessionRepo.Object, _dishRepo.Object, _reservationRepo.Object, _userRepo.Object, _tableRepo.Object);
+            _groupRepo.Object, _sessionRepo.Object, _dishRepo.Object, _reservationRepo.Object, _userRepo.Object, _tableRepo.Object, _orderRepo.Object);
         _groupReservationService = new GroupReservationService(
             _groupRepo.Object, _tableRepo.Object, _reservationRepo.Object, _sessionRepo.Object,
             _userService.Object, _locationService.Object, _orderRepo.Object);

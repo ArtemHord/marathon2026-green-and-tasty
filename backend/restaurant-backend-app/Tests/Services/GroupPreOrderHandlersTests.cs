@@ -272,6 +272,120 @@ public class GroupPreOrderHandlersTests
         _guestSessionService.VerifyNoOtherCalls();
     }
 
+    // ---------- GET /reservations/{reservationId}/invite-token (owner only) ----------
+
+    [Fact]
+    public async Task InviteToken_Owner_Returns200()
+    {
+        _groupReservationService.Setup(s => s.GetOwnerInviteTokenAsync(UserId, ReservationId)).ReturnsAsync(new GetGroupInviteTokenResponse("tok"));
+
+        var response = await new GetInviteTokenHandler(_groupReservationService.Object)
+            .HandleRequest(Request(new() { ["reservationId"] = ReservationId }), _context);
+
+        Assert.Equal(200, response.StatusCode);
+        Assert.Equal("""{"token":"tok"}""", response.Body);
+    }
+
+    [Fact]
+    public async Task InviteToken_WithoutSub_Returns401AndDoesNotCallService()
+    {
+        var response = await new GetInviteTokenHandler(_groupReservationService.Object)
+            .HandleRequest(Request(new() { ["reservationId"] = ReservationId }, userId: null), _context);
+
+        Assert.Equal(401, response.StatusCode);
+        _groupReservationService.VerifyNoOtherCalls();
+    }
+
+    public static TheoryData<Exception, int> InviteTokenErrors() => new()
+    {
+        { new ActionForbiddenException("Only the reservation owner can perform this action."), 403 },
+        { new ReservationNotFoundException("x"), 404 },
+        { new GroupReservationNotFoundException(), 404 },
+    };
+
+    [Theory]
+    [MemberData(nameof(InviteTokenErrors))]
+    public async Task InviteToken_ServiceError_IsMappedToStatusCode(Exception exception, int expectedStatus)
+    {
+        _groupReservationService.Setup(s => s.GetOwnerInviteTokenAsync(UserId, ReservationId)).ThrowsAsync(exception);
+
+        var response = await new GetInviteTokenHandler(_groupReservationService.Object)
+            .HandleRequest(Request(new() { ["reservationId"] = ReservationId }), _context);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+    }
+
+    // ---------- public guest endpoints work without Cognito claims ----------
+
+    [Fact]
+    public async Task GuestInvite_WithoutClaims_Returns200()
+    {
+        _groupReservationService.Setup(s => s.GetGroupReservationByTokenAsync("tok")).ReturnsAsync(new APIHandler.Models.GuestReservation.GetGroupReservationResponse(
+            GroupId, "loc", "Green & Tasty", "addr", DateTime.UtcNow, DateTime.UtcNow.AddHours(1), 4, 1, "Owner", APIHandler.Entities.GroupReservationStatus.Open, true));
+
+        var response = await new APIHandler.Handlers.GuestReservations.GetGroupReservationHandler(_groupReservationService.Object)
+            .HandleRequest(new APIGatewayProxyRequest { PathParameters = new Dictionary<string, string> { ["token"] = "tok" } }, _context);
+
+        Assert.Equal(200, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateGuestSession_WithoutClaims_ReturnsSession()
+    {
+        _guestSessionService.Setup(s => s.CreateGuestSessionAsync(It.IsAny<CreateGuestSessionRequest>()))
+            .ReturnsAsync(new CreatGuestSessionResponse("s1", "dG9rZW4="));
+
+        var response = await new CreateGuestSessionHandler(_guestSessionService.Object).HandleRequest(
+            new APIGatewayProxyRequest { Body = $$"""{ "groupReservationId": "{{GroupId}}", "guestName": "Olena" }""" }, _context);
+
+        Assert.Equal(200, response.StatusCode);
+        Assert.Contains("\"SessionId\":\"s1\"", response.Body);
+    }
+
+    // ---------- guest session token check (GuestAuthorizationService) ----------
+
+    [Theory]
+    [InlineData("Authorization")]
+    [InlineData("authorization")]
+    public async Task GuestAuthorization_ValidTokenForThisSession_Passes(string headerName)
+    {
+        _guestSessionService.Setup(s => s.IsAuthorizedAsync("dG9rZW4=", "s1")).ReturnsAsync(true);
+        var request = new APIGatewayProxyRequest { Headers = new Dictionary<string, string> { [headerName] = "Bearer dG9rZW4=" } };
+
+        var result = await new GuestAuthorizationService(_guestSessionService.Object).ValidateAsync(request, _context, "s1");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GuestAuthorization_TokenOfAnotherSession_Returns401()
+    {
+        _guestSessionService.Setup(s => s.IsAuthorizedAsync("dG9rZW4=", "olena")).ReturnsAsync(false);
+        var request = new APIGatewayProxyRequest { Headers = new Dictionary<string, string> { ["Authorization"] = "Bearer dG9rZW4=" } };
+
+        var result = await new GuestAuthorizationService(_guestSessionService.Object).ValidateAsync(request, _context, "olena");
+
+        Assert.Equal(401, result!.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Bearer ")]
+    [InlineData("Basic dG9rZW4=")]
+    public async Task GuestAuthorization_MissingOrMalformedHeader_Returns401(string? value)
+    {
+        var request = new APIGatewayProxyRequest
+        {
+            Headers = value is null ? null : new Dictionary<string, string> { ["Authorization"] = value },
+        };
+
+        var result = await new GuestAuthorizationService(_guestSessionService.Object).ValidateAsync(request, _context, "s1");
+
+        Assert.Equal(401, result!.StatusCode);
+        _guestSessionService.Verify(s => s.IsAuthorizedAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
     // ---------- helpers ----------
 
     private SubmitGroupPreOrderHandler SubmitHandler() => new(_groupReservationService.Object);

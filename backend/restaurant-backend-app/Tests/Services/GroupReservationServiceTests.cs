@@ -238,6 +238,8 @@ public class GroupReservationServiceTests
 
     [Theory]
     [AutoData]
+    // Reviewer stage 1: the unchecked GetGroupReservationInviteTokenAsync was removed from the interface; these tests call
+    // GetOwnerInviteTokenAsync as the reservation's customer (reservation.CustomerId), assertions unchanged.
     public async Task GetGroupReservationInviteTokenAsync_ValidInput_ReturnsToken(Reservation reservation, GroupReservation groupReservation)
     {
         reservation.Status = ReservationStatus.Reserved;
@@ -253,7 +255,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetByReservationIdAsync(reservation.Id))
             .ReturnsAsync(groupReservation);
 
-        GetGroupInviteTokenResponse result = await _service.GetGroupReservationInviteTokenAsync(reservation.Id);
+        GetGroupInviteTokenResponse result = await _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id);
 
         Assert.Equal(groupReservation.ReservationToken, result.Token);
     }
@@ -266,7 +268,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetReservationByIdAsync(reservationId))
             .ReturnsAsync((Reservation?)null);
 
-        await Assert.ThrowsAsync<ReservationNotFoundException>(() => _service.GetGroupReservationInviteTokenAsync(reservationId));
+        await Assert.ThrowsAsync<ReservationNotFoundException>(() => _service.GetOwnerInviteTokenAsync("any-user", reservationId));
     }
 
     [Theory]
@@ -280,7 +282,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetReservationByIdAsync(reservation.Id))
             .ReturnsAsync(reservation);
 
-        await Assert.ThrowsAsync<ValidationException>(() => _service.GetGroupReservationInviteTokenAsync(reservation.Id));
+        await Assert.ThrowsAsync<ValidationException>(() => _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id));
     }
 
     [Theory]
@@ -296,7 +298,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetReservationByIdAsync(reservation.Id))
             .ReturnsAsync(reservation);
 
-        await Assert.ThrowsAsync<ValidationException>(() => _service.GetGroupReservationInviteTokenAsync(reservation.Id));
+        await Assert.ThrowsAsync<ValidationException>(() => _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id));
     }
 
     // Changed with F3 (was ..._GroupStatusIsNotOpen_ThrowsException): the Owner needs the token in any group state to
@@ -319,7 +321,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetByReservationIdAsync(reservation.Id))
             .ReturnsAsync(groupReservation);
 
-        GetGroupInviteTokenResponse result = await _service.GetGroupReservationInviteTokenAsync(reservation.Id);
+        GetGroupInviteTokenResponse result = await _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id);
 
         Assert.Equal(groupReservation.ReservationToken, result.Token);
     }
@@ -342,7 +344,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetByReservationIdAsync(reservation.Id))
             .ReturnsAsync(groupReservation);
 
-        GetGroupInviteTokenResponse result = await _service.GetGroupReservationInviteTokenAsync(reservation.Id);
+        GetGroupInviteTokenResponse result = await _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id);
 
         Assert.Equal(groupReservation.ReservationToken, result.Token);
     }
@@ -361,6 +363,6 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetByReservationIdAsync(reservation.Id))
             .ReturnsAsync((GroupReservation?)null);
 
-        await Assert.ThrowsAsync<GroupReservationNotFoundException>(() => _service.GetGroupReservationInviteTokenAsync(reservation.Id));
+        await Assert.ThrowsAsync<GroupReservationNotFoundException>(() => _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id));
     }
 }

@@ -37,7 +37,8 @@ public class GuestSessionServiceTests
             _mockDishRepository.Object,
             _mockReservationRepository.Object,
             _mockUserRepository.Object,
-            _mockTableRepository.Object);
+            _mockTableRepository.Object,
+            new Mock<APIHandler.Repositories.Orders.IOrderRepository>().Object);
     }
     [Theory]
     [InlineAutoData(0)]

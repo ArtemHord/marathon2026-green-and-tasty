@@ -148,10 +148,20 @@ public class GroupReservationService(
         }
     }
 
-    public async Task<GetGroupInviteTokenResponse> GetGroupReservationInviteTokenAsync(string reservationId)
+    public async Task<GetGroupInviteTokenResponse> GetOwnerInviteTokenAsync(string userId, string reservationId)
     {
         var reservation = await reservationRepository.GetReservationByIdAsync(reservationId)
             ?? throw new ReservationNotFoundException($"Reservation {reservationId} was not found.");
+
+        // The token lets anyone join the group and see who is in it: only the reservation owner may get it.
+        EnsureOwner(reservation, userId);
+
+        return await GetInviteTokenForReservationAsync(reservation);
+    }
+
+    private async Task<GetGroupInviteTokenResponse> GetInviteTokenForReservationAsync(Reservation reservation)
+    {
+        string reservationId = reservation.Id;
 
         if (reservation.GuestCount < 2)
             throw new ValidationException("Retrieving invitation token for the reservation with only one guest is not permitted.");
@@ -228,12 +238,11 @@ public class GroupReservationService(
         if (group.Status != GroupReservationStatus.Open)
             throw new GroupReservationExpiredException(ClosedMessage);
 
-        // 2. only submitted sessions (the owner session follows the same rule)
+        // 2. only submitted guest sessions
         var sessions = await guestSessionRepository.GetAllByGroupReservationIdAsync(groupReservationId) ?? [];
-        var submittedSessions = sessions.Where(s => s.IsSubmitted).ToList();
-
-        if (submittedSessions.Count == 0)
-            throw new ValidationException("There are no submitted guest sessions in this group.");
+        // The owner session is skipped: the Owner's own dishes are already in the order (POST/PUT /orders),
+        // merging its cart would add them a second time.
+        var submittedSessions = sessions.Where(s => s.IsSubmitted && !s.IsOwnerSession).ToList();
 
         // 3. one list, merged by dishId (first-appearance order)
         var mergedDishes = submittedSessions
@@ -243,13 +252,18 @@ public class GroupReservationService(
             .Select(g => new SubmittedGroupDish(g.Key, g.Sum(d => d.Quantity)))
             .ToList();
 
-        if (mergedDishes.Count == 0)
+        // 4. order of the reservation. The Owner with dishes in the order counts as a submitted participant.
+        var order = await orderRepository.GetOrderByReservationIdAsync(reservation.Id);
+        bool orderIsActive = order is not null && order.Status != OrderStatus.Cancelled;
+        bool ownerHasDishes = orderIsActive && (order!.Dishes ?? []).Any(IsBillable);
+
+        if (submittedSessions.Count == 0 && !ownerHasDishes)
+            throw new ValidationException("There are no submitted guest sessions in this group.");
+
+        if (mergedDishes.Count == 0 && !ownerHasDishes)
             throw new ValidationException("Submitted guest sessions do not contain any dishes.");
 
-        // 4. order of the reservation: add dishes, order -> SubmittedByCustomer, group -> Submitted
-        var order = await orderRepository.GetOrderByReservationIdAsync(reservation.Id);
-
-        if (order is null || order.Status == OrderStatus.Cancelled)
+        if (!orderIsActive)
             throw new ValidationException($"Pre-order for reservation {reservation.Id} was not found.");
 
         order.Dishes ??= [];
@@ -279,7 +293,7 @@ public class GroupReservationService(
         // 5. claim the group: fresh (consistent) read, must still be Open, then a version-checked Open -> Submitted write.
         //    Of two submits only one can make this transition, so the guests' dishes are added to the order once
         //    no matter how the requests interleave (a submit that started before another one finished is rejected here).
-        var claimed = await ClaimGroupForSubmitAsync(groupReservationId);
+        var claimed = await ClaimGroupForSubmitAsync(groupReservationId, mergedDishes);
 
         // 6. version-checked order write; if it fails for another reason, the group is put back to Open (compensation).
         try
@@ -304,7 +318,10 @@ public class GroupReservationService(
         return mergedDishes;
     }
 
-    private async Task<GroupReservation> ClaimGroupForSubmitAsync(string groupReservationId)
+    /// <summary>Order line the restaurant will serve: not canceled by the waiter and with a positive quantity.</summary>
+    public static bool IsBillable(OrderItem line) => line.Quantity > 0 && line.State != OrderItemState.Canceled;
+
+    private async Task<GroupReservation> ClaimGroupForSubmitAsync(string groupReservationId, IReadOnlyList<SubmittedGroupDish> guestDishes)
     {
         var group = await groupReservationRepository.GetGroupReservationByIdAsync(groupReservationId)
             ?? throw new GroupReservationNotFoundException();
@@ -316,6 +333,10 @@ public class GroupReservationService(
             throw new GroupReservationExpiredException(ClosedMessage);
 
         group.Status = GroupReservationStatus.Submitted;
+        // stored in the same (version-checked) write as the claim, so it is atomic with it
+        group.SubmittedGuestDishes = guestDishes
+            .Select(d => new OrderItem { DishId = d.DishId, Quantity = d.Quantity, State = OrderItemState.Pending })
+            .ToList();
 
         try
         {
@@ -334,6 +355,7 @@ public class GroupReservationService(
         try
         {
             claimed.Status = GroupReservationStatus.Open;
+            claimed.SubmittedGuestDishes = null;
             await groupReservationRepository.SaveGroupReservationAsync(claimed);
         }
         catch (Exception)

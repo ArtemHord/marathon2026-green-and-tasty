@@ -289,20 +289,199 @@ public class GroupReservationServiceGroupPreOrderTests
         Assert.Equal(2, order.Dishes.Single(d => d.DishId == "dish1").Quantity);
     }
 
+    // Changed in the security/demo stage: the Owner's dishes are already in the order, so the owner session is skipped
+    // by the merge (it used to follow the "submitted" rule like any session) — nothing is added twice.
     [Theory]
     [AutoData]
-    public async Task SubmitGroupPreOrderAsync_SubmittedOwnerSession_IsIncludedLikeAnyOtherSession(
+    public async Task SubmitGroupPreOrderAsync_OwnerSession_IsSkippedAndOwnerDishesAreNotDuplicated(
+        Reservation reservation, GroupReservation groupReservation, Order order, string userId)
+    {
+        SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = [new OrderItem { DishId = "dish9", Quantity = 1, State = OrderItemState.Pending }]; // owner's own pre-order
+        var owner = Session("owner", groupReservation.GroupReservationId, isSubmitted: true, ("dish9", 1));
+        owner.IsOwnerSession = true;
+        SetupSessions(groupReservation.GroupReservationId, owner,
+            Session("s1", groupReservation.GroupReservationId, isSubmitted: true, ("dish1", 2)));
+
+        var result = await _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id);
+
+        Assert.Equal(new SubmittedGroupDish("dish1", 2), Assert.Single(result)); // response = guests' dishes only
+        Assert.Equal(1, order.Dishes.Single(d => d.DishId == "dish9").Quantity); // not 2
+        Assert.Equal(2, order.Dishes.Single(d => d.DishId == "dish1").Quantity);
+    }
+
+    // Changed with B2 (was ..._OnlyOwnerSessionSubmitted_ThrowsNoSubmittedSessions → 400): the Owner with dishes in the order
+    // counts as a submitted participant, so a group where only the Owner ordered can be submitted; the response is [].
+    [Theory]
+    [AutoData]
+    public async Task SubmitGroupPreOrderAsync_OnlyOwnerHasDishes_SubmitsWithEmptyResponse(
+        Reservation reservation, GroupReservation groupReservation, Order order, string userId)
+    {
+        SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = [new OrderItem { DishId = "dish9", Quantity = 1, State = OrderItemState.Pending }];
+        var owner = Session("owner", groupReservation.GroupReservationId, isSubmitted: true, ("dish9", 1));
+        owner.IsOwnerSession = true;
+        SetupSessions(groupReservation.GroupReservationId, owner,
+            Session("s1", groupReservation.GroupReservationId, isSubmitted: false, ("dish1", 3)));
+        GroupReservation? savedGroup = null;
+        _groupReservationRepositoryMock.Setup(r => r.SaveGroupReservationAsync(It.IsAny<GroupReservation>())).Callback<GroupReservation>(g => savedGroup = g);
+
+        var result = await _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id);
+
+        Assert.Empty(result);
+        Assert.Equal(OrderStatus.SubmittedByCustomer, order.Status);
+        Assert.Equal(1, Assert.Single(order.Dishes).Quantity); // nothing added
+        Assert.Equal(GroupReservationStatus.Submitted, savedGroup!.Status);
+        Assert.Empty(savedGroup.SubmittedGuestDishes!);
+        _orderRepositoryMock.Verify(r => r.SaveOrderAsync(order), Times.Once);
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task SubmitGroupPreOrderAsync_SubmittedGuestsWithoutDishesButOwnerHasDishes_Submits(
+        Reservation reservation, GroupReservation groupReservation, Order order, string userId)
+    {
+        SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = [new OrderItem { DishId = "dish9", Quantity = 2, State = OrderItemState.Confirmed }];
+        SetupSessions(groupReservation.GroupReservationId, Session("s1", groupReservation.GroupReservationId, isSubmitted: true));
+
+        var result = await _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id);
+
+        Assert.Empty(result);
+        Assert.Equal(OrderStatus.SubmittedByCustomer, order.Status);
+    }
+
+    [Theory]
+    [InlineAutoData(0, OrderItemState.Pending)]
+    [InlineAutoData(3, OrderItemState.Canceled)]
+    public async Task SubmitGroupPreOrderAsync_OwnerOrderWithoutBillableLinesAndNoSubmittedGuests_ThrowsNoSubmittedSessions(
+        int quantity, OrderItemState state, Reservation reservation, GroupReservation groupReservation, Order order, string userId)
+    {
+        SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = [new OrderItem { DishId = "dish9", Quantity = quantity, State = state }];
+        var owner = Session("owner", groupReservation.GroupReservationId, isSubmitted: true, ("dish9", 1)); // owner cart is ignored
+        owner.IsOwnerSession = true;
+        SetupSessions(groupReservation.GroupReservationId, owner);
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() =>
+            _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id));
+        Assert.Equal("There are no submitted guest sessions in this group.", ex.Message);
+        VerifyNothingSaved();
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task SubmitGroupPreOrderAsync_SubmittedGuestsWithoutDishesAndOwnerWithoutDishes_ThrowsNoDishes(
         Reservation reservation, GroupReservation groupReservation, Order order, string userId)
     {
         SetupSubmittable(reservation, groupReservation, order, userId);
         order.Dishes = [];
-        var owner = Session("owner", groupReservation.GroupReservationId, isSubmitted: true, ("dish9", 1));
-        owner.IsOwnerSession = true;
-        SetupSessions(groupReservation.GroupReservationId, owner);
+        SetupSessions(groupReservation.GroupReservationId, Session("s1", groupReservation.GroupReservationId, isSubmitted: true));
 
-        var result = await _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id);
+        var ex = await Assert.ThrowsAsync<ValidationException>(() =>
+            _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id));
+        Assert.Equal("Submitted guest sessions do not contain any dishes.", ex.Message);
+        VerifyNothingSaved();
+    }
 
-        Assert.Equal(new SubmittedGroupDish("dish9", 1), Assert.Single(result));
+    // ---------- B1: SubmittedGuestDishes on the group ----------
+
+    [Theory]
+    [AutoData]
+    public async Task SubmitGroupPreOrderAsync_ClaimStoresMergedGuestDishesInTheSameWrite(
+        Reservation reservation, GroupReservation groupReservation, Order order, string userId)
+    {
+        SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = [];
+        SetupSessions(groupReservation.GroupReservationId,
+            Session("s1", groupReservation.GroupReservationId, isSubmitted: true, ("dish1", 2)),
+            Session("s2", groupReservation.GroupReservationId, isSubmitted: true, ("dish1", 1), ("dish2", 1)));
+        var writes = new List<(GroupReservationStatus Status, List<(string, int)>? Dishes)>();
+        _groupReservationRepositoryMock.Setup(r => r.SaveGroupReservationAsync(It.IsAny<GroupReservation>()))
+            .Callback<GroupReservation>(g => writes.Add((g.Status, g.SubmittedGuestDishes?.Select(d => (d.DishId, d.Quantity)).ToList())));
+
+        await _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id);
+
+        var claim = Assert.Single(writes);
+        Assert.Equal(GroupReservationStatus.Submitted, claim.Status);
+        Assert.Equal([("dish1", 3), ("dish2", 1)], claim.Dishes);
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task SubmitGroupPreOrderAsync_Compensation_ClearsSubmittedGuestDishes(
+        Reservation reservation, GroupReservation groupReservation, Order order, string userId)
+    {
+        SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = [];
+        SetupSessions(groupReservation.GroupReservationId, Session("s1", groupReservation.GroupReservationId, isSubmitted: true, ("dish1", 2)));
+        var writes = new List<(GroupReservationStatus Status, int? DishCount)>();
+        _groupReservationRepositoryMock.Setup(r => r.SaveGroupReservationAsync(It.IsAny<GroupReservation>()))
+            .Callback<GroupReservation>(g => writes.Add((g.Status, g.SubmittedGuestDishes?.Count)));
+        _orderRepositoryMock.Setup(r => r.SaveOrderAsync(It.IsAny<Order>())).ThrowsAsync(new TimeoutException("dynamo down"));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => _service.SubmitGroupPreOrderAsync(userId, groupReservation.GroupReservationId, reservation.Id));
+
+        Assert.Equal([(GroupReservationStatus.Submitted, (int?)1), (GroupReservationStatus.Open, (int?)null)], writes);
+        Assert.Null(groupReservation.SubmittedGuestDishes);
+    }
+
+    [Fact]
+    public void GroupReservation_SubmittedGuestDishes_IsNotSerialized()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new GroupReservation
+        {
+            GroupReservationId = "g1", ReservationId = "r1", ReservationToken = "t",
+            SubmittedGuestDishes = [new OrderItem { DishId = "d", Quantity = 1 }],
+        });
+
+        Assert.DoesNotContain("ubmittedGuestDishes", json);
+    }
+
+    // ---------- GET invite-token: owner only ----------
+
+    [Theory]
+    [AutoData]
+    public async Task GetOwnerInviteTokenAsync_Owner_ReturnsToken(Reservation reservation, GroupReservation groupReservation, string userId)
+    {
+        SetupReservation(reservation, userId);
+        reservation.GuestCount = 3;
+        SetupGroupByReservation(groupReservation, reservation);
+
+        var result = await _service.GetOwnerInviteTokenAsync(userId, reservation.Id);
+
+        Assert.Equal(groupReservation.ReservationToken, result.Token);
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task GetOwnerInviteTokenAsync_AnotherCustomer_ThrowsActionForbidden(Reservation reservation, GroupReservation groupReservation, string ownerId, string otherId)
+    {
+        SetupReservation(reservation, ownerId);
+        reservation.GuestCount = 3;
+        SetupGroupByReservation(groupReservation, reservation);
+
+        await Assert.ThrowsAsync<ActionForbiddenException>(() => _service.GetOwnerInviteTokenAsync(otherId, reservation.Id));
+        _groupReservationRepositoryMock.Verify(r => r.GetByReservationIdAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task GetOwnerInviteTokenAsync_ReservationWithoutCustomer_ThrowsActionForbidden(Reservation reservation, string userId)
+    {
+        reservation.CustomerId = null;
+        _reservationRepositoryMock.Setup(r => r.GetReservationByIdAsync(reservation.Id)).ReturnsAsync(reservation);
+
+        await Assert.ThrowsAsync<ActionForbiddenException>(() => _service.GetOwnerInviteTokenAsync(userId, reservation.Id));
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task GetOwnerInviteTokenAsync_ReservationNotFound_ThrowsReservationNotFound(string reservationId, string userId)
+    {
+        _reservationRepositoryMock.Setup(r => r.GetReservationByIdAsync(reservationId)).ReturnsAsync((Reservation?)null);
+
+        await Assert.ThrowsAsync<ReservationNotFoundException>(() => _service.GetOwnerInviteTokenAsync(userId, reservationId));
     }
 
     [Theory]
@@ -453,6 +632,7 @@ public class GroupReservationServiceGroupPreOrderTests
         Reservation reservation, GroupReservation groupReservation, Order order, string userId)
     {
         SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = []; // B2: the Owner without dishes in the order is not a submitted participant
         SetupSessions(groupReservation.GroupReservationId);
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() =>
@@ -467,6 +647,7 @@ public class GroupReservationServiceGroupPreOrderTests
         Reservation reservation, GroupReservation groupReservation, Order order, string userId)
     {
         SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = []; // B2: the Owner without dishes in the order is not a submitted participant
         SetupSessions(groupReservation.GroupReservationId,
             Session("s1", groupReservation.GroupReservationId, isSubmitted: false, ("dish1", 2)),
             Session("s2", groupReservation.GroupReservationId, isSubmitted: false, ("dish2", 1)));
@@ -483,6 +664,7 @@ public class GroupReservationServiceGroupPreOrderTests
         Reservation reservation, GroupReservation groupReservation, Order order, string userId)
     {
         SetupSubmittable(reservation, groupReservation, order, userId);
+        order.Dishes = []; // B2: the Owner without dishes in the order is not a submitted participant
         var legacy = Session("s3", groupReservation.GroupReservationId, isSubmitted: true);
         legacy.Dishes = null!;
         SetupSessions(groupReservation.GroupReservationId,

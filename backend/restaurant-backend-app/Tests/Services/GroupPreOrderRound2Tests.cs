@@ -116,7 +116,7 @@ public class GroupPreOrderRound2Tests
     private OrderService OrderService() => new(_orders, _reservationRepo.Object, _dishService.Object, _notificationService.Object);
 
     private GuestSessionService GuestSessionService() => new(
-        _groupRepo.Object, _sessionRepo.Object, _dishRepo.Object, _reservationRepo.Object, _userRepo.Object, _tableRepo.Object);
+        _groupRepo.Object, _sessionRepo.Object, _dishRepo.Object, _reservationRepo.Object, _userRepo.Object, _tableRepo.Object, _orders);
 
     // =====================================================================
     // Two simultaneous group submits
@@ -216,6 +216,17 @@ public class GroupPreOrderRound2Tests
         Assert.Contains("GroupReservationSubmitted", again.Body);
         Assert.Equal(3, _orders.Stored.Dishes.Single().Quantity);
     }
+
+    // Added in the security stage: GET invite-token now requires the reservation owner's Cognito "sub" (401 without it,
+    // 403 for another customer). The invite-token tests above send the owner's claims; their assertions are unchanged.
+    private static APIGatewayProxyRequest OwnerInviteTokenRequest() => new()
+    {
+        PathParameters = new Dictionary<string, string> { ["reservationId"] = ReservationId },
+        RequestContext = new APIGatewayProxyRequest.ProxyRequestContext
+        {
+            Authorizer = new APIGatewayCustomAuthorizerContext { Claims = new Dictionary<string, string> { ["sub"] = OwnerId } },
+        },
+    };
 
     private static APIGatewayProxyRequest SubmitRequest() => new()
     {
@@ -488,7 +499,7 @@ public class GroupPreOrderRound2Tests
         _storedGroup.Status = status;
 
         var response = await new GetInviteTokenHandler(GroupService())
-            .HandleRequest(new APIGatewayProxyRequest { PathParameters = new Dictionary<string, string> { ["reservationId"] = ReservationId } }, _context);
+            .HandleRequest(OwnerInviteTokenRequest(), _context);
 
         Assert.Equal(200, response.StatusCode);
         Assert.Equal("""{"token":"tok"}""", response.Body);
@@ -500,7 +511,7 @@ public class GroupPreOrderRound2Tests
         _groupRepo.Setup(r => r.GetByReservationIdAsync(ReservationId)).ReturnsAsync((GroupReservation?)null);
 
         var response = await new GetInviteTokenHandler(GroupService())
-            .HandleRequest(new APIGatewayProxyRequest { PathParameters = new Dictionary<string, string> { ["reservationId"] = ReservationId } }, _context);
+            .HandleRequest(OwnerInviteTokenRequest(), _context);
 
         Assert.Equal(404, response.StatusCode);
         using var json = JsonDocument.Parse(response.Body);
@@ -515,7 +526,7 @@ public class GroupPreOrderRound2Tests
         _reservation.GuestCount = guestCount;
 
         var response = await new GetInviteTokenHandler(GroupService())
-            .HandleRequest(new APIGatewayProxyRequest { PathParameters = new Dictionary<string, string> { ["reservationId"] = ReservationId } }, _context);
+            .HandleRequest(OwnerInviteTokenRequest(), _context);
 
         Assert.Equal(expectedStatus, response.StatusCode);
     }

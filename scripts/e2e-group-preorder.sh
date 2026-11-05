@@ -155,6 +155,9 @@ ok "reservation $RESERVATION_ID (стіл $TABLE_ID, $START – $END)"
 
 # ---------- 3. invite token → group ----------
 log "3. Invite token і група"
+req GET "/reservations/$RESERVATION_ID/invite-token"; expect 401 "invite-token без токена"; ok "invite-token без токена → 401"
+req GET "/reservations/$RESERVATION_ID/invite-token" "" "$OTHER_TOKEN"; expect 403 "invite-token чужим customer"; ok "invite-token чужим customer → 403"
+req GET "/reservations/00000000-0000-0000-0000-000000000000/invite-token" "" "$OWNER_TOKEN"; expect 404 "invite-token неіснуючого бронювання"; ok "invite-token неіснуючого бронювання → 404"
 req GET "/reservations/$RESERVATION_ID/invite-token" "" "$OWNER_TOKEN"; expect 200 "GET invite-token"
 INVITE="$(jq -r '.token // .Token // empty' <<<"$HTTP_BODY")"; [[ -n "$INVITE" ]] || die "Немає token: $HTTP_BODY"
 req GET "/guest/invites/$INVITE"; expect 200 "GET /guest/invites/{token}"
@@ -268,6 +271,13 @@ log "    owner pre-order: POST /orders (A×1)"
 req POST /orders "$(jq -n --arg r "$RESERVATION_ID" --arg d "$DISH_A" '{reservationId:$r, orderItems:[{dishId:$d, quantity:1}]}')" "$OWNER_TOKEN"
 expect "200 201" "POST /orders"; ok "order створено"
 
+# Owner у snapshot = його order («My Pre-Order» = те, що отримає ресторан)
+req GET "/guest/groups/$GROUP_ID/sessions" "" "$OWNER_TOKEN"; expect 200 "GET sessions після owner pre-order"
+assert_jq --arg id "$OWNER_SESSION_ID" --arg a "$DISH_A" \
+  '.participants[] | select(.id == $id) | .type == "Owner" and .isSubmitted == true and ([.items[] | {key:.dish.id, value:.quantity}] | from_entries) == {($a): 1} and .total == ([.items[] | .dish.price * .quantity] | add)' \
+  "Owner: items з order (A×1), isSubmitted = true, total = Σ рядків order"
+assert_jq '.total == ([.participants[].total] | add)' "snapshot.total включає order Owner"
+
 # Подвійний клік: два submit одночасно — рівно один 200, другий 400 «already submitted»; страви не подвоюються (див. крок 11).
 SUBMIT_TMP="$(mktemp -d)"
 for n in 1 2; do
@@ -304,6 +314,15 @@ soft_jq '.Status == "Submitted" and .CanJoin == false' "після submit: Statu
 req POST /guest/sessions "$(jq -n --arg g "$GROUP_ID" '{groupReservationId:$g, guestName:"Late"}')"
 expect 400 "POST /guest/sessions після submit"; ok "join після submit → 400 ($(err_msg))"
 req GET "/guest/groups/$GROUP_ID/sessions" "" "$OWNER_TOKEN"; soft_expect 200 "GET sessions після submit"
+# read-only екран: Grand Total (= консолідація submitted-учасників) має дорівнювати order, тобто A×4, B×1 —
+# страви гостей не можуть рахуватись і в Owner (його order уже містить їх після submit), і в самих гостях
+if jq -e --arg a "$DISH_A" --arg b "$DISH_B" \
+  '[.participants[] | select(.isSubmitted) | .items[]] | group_by(.dish.id) | map({key: .[0].dish.id, value: (map(.quantity) | add)}) | from_entries == {($a): 4, ($b): 1}' \
+  <<<"$HTTP_BODY" >/dev/null; then ok "після submit: консолідація snapshot = order (A×4, B×1)"
+else
+  printf '  \033[33m✘\033[0m після submit: консолідація snapshot ≠ order (A×4, B×1): %s\n' "$HTTP_BODY"
+  FRONTEND_ISSUES+=("після submit консолідація snapshot ≠ order A×4, B×1 (страви гостей пораховано двічі?)")
+fi
 req GET "/reservations/$RESERVATION_ID/guest-session-id" "" "$OWNER_TOKEN"; soft_expect 200 "guest-session-id після submit"
 req POST /guest/sessions "$(jq -n --arg g "$GROUP_ID" '{groupReservationId:$g, guestName:"Late"}')"; expect 400 "join після submit"
 assert_jq '.errorCode == "GroupReservationSubmitted"' "join після submit → 400 GroupReservationSubmitted"
@@ -313,7 +332,7 @@ log "11. GET /orders/{reservationId}"
 req GET "/orders/$RESERVATION_ID" "" "$OWNER_TOKEN"; expect 200 "GET order"
 assert_jq --arg a "$DISH_A" --arg b "$DISH_B" \
   '([.orderItems[] | {key:.dish.id, value:.quantity}] | from_entries) == {($a): 4, ($b): 1}' \
-  "order: A×4 (owner 1 + група 3), B×1"
+  "order: A×4 (owner 1 + група 3), B×1 — страви Owner не продубльовані"
 assert_jq '.status == "SubmittedByCustomer" or .status == 3' "order → SubmittedByCustomer"
 
 if (( ${#FRONTEND_ISSUES[@]} > 0 )); then

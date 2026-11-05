@@ -1,4 +1,5 @@
 ﻿using Amazon.DynamoDBv2.DataModel;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace APIHandler.Entities;
@@ -26,4 +27,13 @@ public class GroupReservation
     [DynamoDBVersion("version")]
     [JsonIgnore]
     public int? Version { get; set; }
+
+    /// <summary>
+    /// Guests' dishes (merged by dishId) that the group submit added to the order. Written in the same version-checked
+    /// write as the Open -> Submitted claim and cleared when the claim is compensated. The snapshot subtracts them from
+    /// the order to show only the Owner's own dishes after submit. Nullable: old records / open groups have none.
+    /// </summary>
+    [DynamoDBProperty("submittedGuestDishes")]
+    [JsonIgnore]
+    public List<OrderItem>? SubmittedGuestDishes { get; set; }
 }
