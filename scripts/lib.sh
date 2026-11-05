@@ -47,4 +47,7 @@ ensure_syndicate() {
   fi
   export PATH="$VENV_DIR/bin:$PATH"
   export SDCT_CONF="$SDCT_DIR"
+  # .NET на macOS падає з ENOENT, якщо немає $TMPDIR/.dotnet (перший запуск dotnet із дочірнього процесу)
+  mkdir -p "${TMPDIR:-/tmp}/.dotnet/lockfiles" "$HOME/.dotnet"
+  export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 }
