@@ -1,0 +1,187 @@
+@use 'app/shared/styles/abstracts/colors' as color;
+@use 'app/shared/styles/abstracts/typography' as typography;
+
+:host {
+  display: block;
+}
+
+.card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: color.$neutral-0;
+  border-radius: 12px;
+}
+
+.card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  @include typography.h4;
+  overflow-wrap: anywhere;
+}
+
+// Cart status — text, not only colour (added by the homework; not in Figma).
+.chip {
+  @include typography.caption;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  white-space: nowrap;
+
+  &.submitted {
+    color: color.$green-800;
+    background: color.$green-100;
+    border-color: color.$green-150;
+  }
+
+  &.pending {
+    color: color.$neutral-900;
+    background: color.$orange-100;
+    border-color: color.$orange-400;
+  }
+}
+
+.chip-icon {
+  color: inherit;
+}
+
+// Text button: Button light, bottom border neutral-900, 32 px high (Figma «Remove Guest»).
+.text-button {
+  @include typography.button-light;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-width: 0 0 1px;
+  border-bottom-color: color.$neutral-900;
+  border-radius: 0;
+  text-decoration: none;
+}
+
+.items {
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color.$neutral-100;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.avatar {
+  display: block;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.initial {
+  @include typography.text-style(16px, 24px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color.$neutral-600;
+  background: color.$green-100;
+}
+
+.name {
+  @include typography.body-bold;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qty {
+  @include typography.caption;
+  color: color.$neutral-600;
+  white-space: nowrap;
+}
+
+.price {
+  @include typography.body-bold;
+  flex: 0 0 auto;
+  min-width: 60px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.empty {
+  @include typography.body;
+  padding: 8px 12px;
+  color: color.$neutral-600;
+}
+
+.subtotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 12px 0;
+  border-top: 1px solid color.$neutral-100;
+}
+
+.subtotal-label {
+  @include typography.h4;
+}
+
+.subtotal-value {
+  @include typography.h5;
+}
+
+@media (max-width: 480px) {
+  .item {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    padding: 8px 4px;
+  }
+
+  .avatar {
+    grid-row: span 2;
+  }
+
+  .name {
+    grid-column: 2;
+  }
+
+  .qty {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .price {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .subtotal {
+    padding: 12px 4px 0;
+  }
+}

@@ -1,6 +1,8 @@
 using Amazon.Lambda.APIGatewayEvents;
 using Amazon.Lambda.Core;
 using APIHandler.Helpers;
+using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace APIHandler.Services.GuestSessions;
@@ -9,7 +11,11 @@ public class GuestAuthorizationService(IGuestSessionService guestSessionService)
 {
     public async ValueTask<APIGatewayProxyResponse?> ValidateAsync(APIGatewayProxyRequest request, ILambdaContext context, string guestSessionid)
     {
-        if (!request.Headers.TryGetValue("Authorization", out string? authorizationValue))
+        // header names are case-insensitive (HTTP/2 clients send "authorization"); no headers at all → 401, not 500
+        string? authorizationValue = request.Headers?
+            .FirstOrDefault(h => string.Equals(h.Key, "Authorization", StringComparison.OrdinalIgnoreCase)).Value;
+
+        if (string.IsNullOrEmpty(authorizationValue))
             return CreateErrorResponse(context);
 
         const string BearerString = "Bearer ";

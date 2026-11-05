@@ -38,4 +38,12 @@ public class Order
     [DynamoDBProperty("status", typeof(EnumAsIntConverter<OrderStatus>))]
     [JsonPropertyName("status")]
     public OrderStatus Status { get; set; }
+
+    /// <summary>
+    /// Optimistic-locking version (DynamoDB conditional write on every save). Nullable: records written before it
+    /// existed load as null and the first save sets it. Not part of API responses.
+    /// </summary>
+    [DynamoDBVersion("version")]
+    [JsonIgnore]
+    public int? Version { get; set; }
 }

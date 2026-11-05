@@ -8,6 +8,10 @@ export interface GuestInvite {
   MaxGuestCount: number;
   TableNumber: number;
   InviterName: string;
+  /** Статус групи; бекенд повертає його разом з CanJoin (200 і для повної / Submitted / Closed групи). */
+  Status?: 'Open' | 'Submitted' | 'Closed';
+  /** false — приєднатися вже не можна (група повна, відправлена або закрита). */
+  CanJoin?: boolean;
 }
 
 export interface GroupInviteToken {

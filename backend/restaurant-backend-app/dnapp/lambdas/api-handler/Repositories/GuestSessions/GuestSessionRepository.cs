@@ -9,10 +9,9 @@ namespace APIHandler.Repositories.GuestSessions;
 
 public class GuestSessionRepository(IDynamoDBContext context) : IGuestSessionRepository
 {
-    public async Task<GuestSession?> GetByGuestSessionId(string id) => await context.LoadAsync<GuestSession?>(id, new LoadConfig()
-    {
-        OverrideTableName = ResourceNames.GuestSessionTableName
-    });
+    // ConsistentRead: callers rely on read-by-id to see writes the GroupReservationId index may not show yet.
+    public async Task<GuestSession?> GetByGuestSessionId(string id) =>
+        await context.LoadAsync<GuestSession?>(id, DynamoConfig.LoadConfig(ResourceNames.GuestSessionTableName));
 
     public async Task<GuestSession?> GetByGroupReservationId(string groupReservationId)
     {
@@ -58,7 +57,8 @@ public class GuestSessionRepository(IDynamoDBContext context) : IGuestSessionRep
             IndexName = GlobalSecondaryIndexes.GuestSession.GroupReservationId
         }).GetRemainingAsync();
 
-        return result.Count;
+        // The owner session is not a joined guest: the owner is always accounted for separately (+1).
+        return result.Count(s => !s.IsOwnerSession);
     }
 
     public async Task DeleteAsync(GuestSession session)

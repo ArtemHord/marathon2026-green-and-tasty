@@ -52,3 +52,4 @@ flowchart LR
 
 | Дата | Фіча | Агенти | Раундів рев'ю | Що знайшли tester / reviewer | Коміт |
 |---|---|---|---|---|---|
+| 2026-11-05 | Груповий pre-order Owner (A2 backend L1–L3 + A3 frontend practice–L3 + Remove Guest, верстка за Figma) | backend-dev ∥ frontend-dev → tester ×3 → reviewer ×3 | 3 (CHANGES_REQUESTED → CHANGES_REQUESTED → APPROVE) | tester: екран Owner ламався для повної/submitted групи (invite-endpoints давали 400), snapshot після DELETE показував видаленого гостя (GSI eventually consistent); reviewer: гонка двох submit подвоювала страви в order → claim групи з `[DynamoDBVersion]` + компенсація | ef493ef, 2605a77, 8c44a4e |

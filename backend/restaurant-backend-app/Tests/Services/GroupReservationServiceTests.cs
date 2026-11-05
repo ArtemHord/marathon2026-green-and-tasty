@@ -4,6 +4,7 @@ using APIHandler.Exceptions;
 using APIHandler.Models.GroupReservation;
 using APIHandler.Repositories.GroupReservations;
 using APIHandler.Repositories.GuestSessions;
+using APIHandler.Repositories.Orders;
 using APIHandler.Repositories.Reservations;
 using APIHandler.Repositories.Tables;
 using APIHandler.Services.Auth;
@@ -22,6 +23,7 @@ public class GroupReservationServiceTests
     private readonly Mock<IGuestSessionRepository> _guestSessionRepositoryMock = new();
     private readonly Mock<IUserService> _userServiceMock = new();
     private readonly Mock<ILocationService> _locationServiceMock = new();
+    private readonly Mock<IOrderRepository> _orderRepositoryMock = new();
 
     private readonly GroupReservationService _service;
 
@@ -33,7 +35,8 @@ public class GroupReservationServiceTests
             _reservationRepositoryMock.Object,
             _guestSessionRepositoryMock.Object,
             _userServiceMock.Object,
-            _locationServiceMock.Object);
+            _locationServiceMock.Object,
+            _orderRepositoryMock.Object);
     }
 
     [Theory]
@@ -98,42 +101,109 @@ public class GroupReservationServiceTests
         await Assert.ThrowsAsync<GroupReservationNotFoundException>(() => _service.GetGroupReservationByTokenAsync(token));
     }
 
+    // Changed with F2/F3 (was ..._GroupReservationIsNotOpen_ThrowsException / ..._WhenGuestCountIsMax_ThrowsGuestLimitExceeded):
+    // GET /guest/invites/{token} used to fail for a non-open or full group, which broke the Owner screen (it resolves its
+    // group through this endpoint). Details are now returned in any state; joining is guarded by POST /guest/sessions,
+    // and Status/CanJoin tell the guest UI about it.
     [Theory]
     [InlineAutoData(GroupReservationStatus.Closed)]
     [InlineAutoData(GroupReservationStatus.Submitted)]
-    public async Task GetGroupReservationByTokenAsync_GroupReservationIsNotOpen_ThrowsException(
+    public async Task GetGroupReservationByTokenAsync_GroupReservationIsNotOpen_ReturnsDetailsWithStatusAndCanJoinFalse(
         GroupReservationStatus status,
-        GroupReservation groupReservation)
+        GroupReservation groupReservation,
+        Reservation reservation,
+        Table table)
     {
         groupReservation.Status = status;
+        SetupInviteDetails(groupReservation, reservation, table, guestCount: 4, joinedGuests: 0);
 
-        _groupReservationRepositoryMock
-            .Setup(r => r.GetGroupReservationByTokenAsync(groupReservation.ReservationToken))
-            .ReturnsAsync(groupReservation);
+        var result = await _service.GetGroupReservationByTokenAsync(groupReservation.ReservationToken);
 
-        await Assert.ThrowsAsync<GroupReservationExpiredException>(() => _service.GetGroupReservationByTokenAsync(groupReservation.ReservationToken));
+        Assert.Equal(groupReservation.GroupReservationId, result.GroupReservationId);
+        Assert.Equal(status, result.Status);
+        Assert.False(result.CanJoin);
     }
 
     [Theory]
-    [AutoData]
-    public async Task GetGroupReservationByTokenAsync_WhenGuestCountIsMax_ThrowsGuestLimitExceeded(GroupReservation groupReservation, Reservation reservation)
+    [InlineAutoData(4, 3)] // owner + 3 guests = full (boundary)
+    [InlineAutoData(4, 4)]
+    [InlineAutoData(2, 1)]
+    public async Task GetGroupReservationByTokenAsync_WhenGuestCountIsMax_ReturnsDetailsWithCanJoinFalse(
+        int guestCount,
+        int joinedGuests,
+        GroupReservation groupReservation,
+        Reservation reservation,
+        Table table)
     {
         groupReservation.Status = GroupReservationStatus.Open;
+        SetupInviteDetails(groupReservation, reservation, table, guestCount, joinedGuests);
+
+        var result = await _service.GetGroupReservationByTokenAsync(groupReservation.ReservationToken);
+
+        Assert.Equal(groupReservation.GroupReservationId, result.GroupReservationId);
+        Assert.Equal(GroupReservationStatus.Open, result.Status);
+        Assert.Equal(guestCount, result.MaxGuestCount);
+        Assert.False(result.CanJoin);
+    }
+
+    [Theory]
+    [InlineAutoData(4, 2)] // boundary: one seat left
+    [InlineAutoData(4, 0)]
+    [InlineAutoData(2, 0)]
+    public async Task GetGroupReservationByTokenAsync_OpenGroupWithFreeSeat_CanJoinTrue(
+        int guestCount,
+        int joinedGuests,
+        GroupReservation groupReservation,
+        Reservation reservation,
+        Table table)
+    {
+        groupReservation.Status = GroupReservationStatus.Open;
+        SetupInviteDetails(groupReservation, reservation, table, guestCount, joinedGuests);
+
+        var result = await _service.GetGroupReservationByTokenAsync(groupReservation.ReservationToken);
+
+        Assert.Equal(GroupReservationStatus.Open, result.Status);
+        Assert.True(result.CanJoin);
+    }
+
+    [Theory]
+    [InlineAutoData(ReservationStatus.InProgress)]
+    [InlineAutoData(ReservationStatus.Completed)]
+    [InlineAutoData(ReservationStatus.Cancelled)]
+    public async Task GetGroupReservationByTokenAsync_ReservationNotReserved_CanJoinFalse(
+        ReservationStatus reservationStatus,
+        GroupReservation groupReservation,
+        Reservation reservation,
+        Table table)
+    {
+        groupReservation.Status = GroupReservationStatus.Open;
+        SetupInviteDetails(groupReservation, reservation, table, guestCount: 4, joinedGuests: 0);
+        reservation.Status = reservationStatus;
+
+        var result = await _service.GetGroupReservationByTokenAsync(groupReservation.ReservationToken);
+
+        Assert.False(result.CanJoin);
+    }
+
+    private void SetupInviteDetails(GroupReservation groupReservation, Reservation reservation, Table table, int guestCount, int joinedGuests)
+    {
         groupReservation.ReservationId = reservation.Id;
+        reservation.TableId = table.Id;
+        reservation.GuestCount = guestCount;
+        reservation.Status = ReservationStatus.Reserved;
 
         _groupReservationRepositoryMock
             .Setup(r => r.GetGroupReservationByTokenAsync(groupReservation.ReservationToken))
             .ReturnsAsync(groupReservation);
-
         _reservationRepositoryMock
             .Setup(r => r.GetReservationByIdAsync(reservation.Id))
             .ReturnsAsync(reservation);
-
         _guestSessionRepositoryMock
             .Setup(r => r.CountByGroupReservationId(groupReservation.GroupReservationId))
-            .ReturnsAsync(reservation.GuestCount);
-
-        await Assert.ThrowsAsync<GuestLimitExceededException>(() => _service.GetGroupReservationByTokenAsync(groupReservation.ReservationToken));
+            .ReturnsAsync(joinedGuests);
+        _tableRepositoryMock
+            .Setup(r => r.GetTableAsync(table.Id))
+            .ReturnsAsync(table);
     }
 
     [Theory]
@@ -168,6 +238,8 @@ public class GroupReservationServiceTests
 
     [Theory]
     [AutoData]
+    // Reviewer stage 1: the unchecked GetGroupReservationInviteTokenAsync was removed from the interface; these tests call
+    // GetOwnerInviteTokenAsync as the reservation's customer (reservation.CustomerId), assertions unchanged.
     public async Task GetGroupReservationInviteTokenAsync_ValidInput_ReturnsToken(Reservation reservation, GroupReservation groupReservation)
     {
         reservation.Status = ReservationStatus.Reserved;
@@ -183,7 +255,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetByReservationIdAsync(reservation.Id))
             .ReturnsAsync(groupReservation);
 
-        GetGroupInviteTokenResponse result = await _service.GetGroupReservationInviteTokenAsync(reservation.Id);
+        GetGroupInviteTokenResponse result = await _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id);
 
         Assert.Equal(groupReservation.ReservationToken, result.Token);
     }
@@ -196,7 +268,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetReservationByIdAsync(reservationId))
             .ReturnsAsync((Reservation?)null);
 
-        await Assert.ThrowsAsync<ReservationNotFoundException>(() => _service.GetGroupReservationInviteTokenAsync(reservationId));
+        await Assert.ThrowsAsync<ReservationNotFoundException>(() => _service.GetOwnerInviteTokenAsync("any-user", reservationId));
     }
 
     [Theory]
@@ -210,7 +282,7 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetReservationByIdAsync(reservation.Id))
             .ReturnsAsync(reservation);
 
-        await Assert.ThrowsAsync<ValidationException>(() => _service.GetGroupReservationInviteTokenAsync(reservation.Id));
+        await Assert.ThrowsAsync<ValidationException>(() => _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id));
     }
 
     [Theory]
@@ -226,13 +298,15 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetReservationByIdAsync(reservation.Id))
             .ReturnsAsync(reservation);
 
-        await Assert.ThrowsAsync<ValidationException>(() => _service.GetGroupReservationInviteTokenAsync(reservation.Id));
+        await Assert.ThrowsAsync<ValidationException>(() => _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id));
     }
 
+    // Changed with F3 (was ..._GroupStatusIsNotOpen_ThrowsException): the Owner needs the token in any group state to
+    // reload the read-only "Sent to Restaurant" screen. Guests still cannot join a non-open group (POST /guest/sessions).
     [Theory]
-    [InlineAutoData(GroupReservationStatus.Closed, typeof(GroupReservationExpiredException))]
-    [InlineAutoData(GroupReservationStatus.Submitted, typeof(GroupReservationSubmittedException))]
-    public async Task GetGroupReservationInviteTokenAsync_GroupStatusIsNotOpen_ThrowsException(GroupReservationStatus status, Type type, Reservation reservation, GroupReservation groupReservation)
+    [InlineAutoData(GroupReservationStatus.Closed)]
+    [InlineAutoData(GroupReservationStatus.Submitted)]
+    public async Task GetGroupReservationInviteTokenAsync_GroupStatusIsNotOpen_ReturnsToken(GroupReservationStatus status, Reservation reservation, GroupReservation groupReservation)
     {
         reservation.Status = ReservationStatus.Reserved;
         reservation.GuestCount = 3;
@@ -247,6 +321,48 @@ public class GroupReservationServiceTests
             .Setup(r => r.GetByReservationIdAsync(reservation.Id))
             .ReturnsAsync(groupReservation);
 
-        await Assert.ThrowsAsync(type, () => _service.GetGroupReservationInviteTokenAsync(reservation.Id));
+        GetGroupInviteTokenResponse result = await _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id);
+
+        Assert.Equal(groupReservation.ReservationToken, result.Token);
+    }
+
+    [Theory]
+    [InlineAutoData(ReservationStatus.Completed)]
+    [InlineAutoData(ReservationStatus.Cancelled)]
+    [InlineAutoData(ReservationStatus.InProgress)]
+    public async Task GetGroupReservationInviteTokenAsync_ReservationNotReservedWithGroup_ReturnsToken(ReservationStatus reservationStatus, Reservation reservation, GroupReservation groupReservation)
+    {
+        reservation.Status = reservationStatus;
+        reservation.GuestCount = 3;
+        groupReservation.ReservationId = reservation.Id;
+        groupReservation.Status = GroupReservationStatus.Closed;
+
+        _reservationRepositoryMock
+            .Setup(r => r.GetReservationByIdAsync(reservation.Id))
+            .ReturnsAsync(reservation);
+        _groupReservationRepositoryMock
+            .Setup(r => r.GetByReservationIdAsync(reservation.Id))
+            .ReturnsAsync(groupReservation);
+
+        GetGroupInviteTokenResponse result = await _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id);
+
+        Assert.Equal(groupReservation.ReservationToken, result.Token);
+    }
+
+    [Theory]
+    [AutoData]
+    public async Task GetGroupReservationInviteTokenAsync_GroupNotFound_ThrowsGroupReservationNotFoundException(Reservation reservation)
+    {
+        reservation.Status = ReservationStatus.Reserved;
+        reservation.GuestCount = 3;
+
+        _reservationRepositoryMock
+            .Setup(r => r.GetReservationByIdAsync(reservation.Id))
+            .ReturnsAsync(reservation);
+        _groupReservationRepositoryMock
+            .Setup(r => r.GetByReservationIdAsync(reservation.Id))
+            .ReturnsAsync((GroupReservation?)null);
+
+        await Assert.ThrowsAsync<GroupReservationNotFoundException>(() => _service.GetOwnerInviteTokenAsync(reservation.CustomerId!, reservation.Id));
     }
 }

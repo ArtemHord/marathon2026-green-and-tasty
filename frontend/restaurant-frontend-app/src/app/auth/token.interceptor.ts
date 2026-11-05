@@ -17,13 +17,25 @@ export const tokenInterceptor: HttpInterceptorFn = (
 ) => {
   const toastr = inject(ToastService);
 
-  // IMPORTANT: do not modify Guest endpoints at all.
+  // IMPORTANT: do not modify the body of Guest endpoints.
   // Guest flow uses a different token (guest session token) and we must not touch the body.
   // Otherwise we break POST /guest/sessions payload.
   if (req.url.includes('/guest/')) {
-    return next(req).pipe(
+    // Owner endpoints under /guest/groups/ (sessions, remove guest) sit behind cognito_authorizer:
+    // attach the Cognito id token unless the caller already set its own Authorization header.
+    const isOwnerEndpoint = req.url.includes('/guest/groups/');
+    const guestRequest =
+      isOwnerEndpoint && !req.headers.has('Authorization')
+        ? withCognitoToken(req, inject(AuthenticationService))
+        : req;
+
+    return next(guestRequest).pipe(
       catchError((error: HttpErrorResponse) => {
         console.log(error);
+
+        if (guestRequest.context.get(SKIP_ERROR_TOAST)) {
+          return throwError(() => error);
+        }
 
         let errorMessage = 'An unexpected error occurred.';
         if (error.error && typeof error.error === 'string') {
@@ -40,7 +52,13 @@ export const tokenInterceptor: HttpInterceptorFn = (
             toastr.error(errorMessage || 'Bad request.', 'Error');
             break;
           case 401:
-            toastr.error('Session expired. Please re-open the invite link.', 'Unauthorized');
+            // owner endpoints use Cognito — same message as regular authenticated requests
+            toastr.error(
+              isOwnerEndpoint
+                ? 'Please log in to perform the action!'
+                : 'Session expired. Please re-open the invite link.',
+              'Unauthorized'
+            );
             break;
           case 403:
             toastr.error(errorMessage || 'You are not allowed!', 'Forbidden');
@@ -67,17 +85,7 @@ export const tokenInterceptor: HttpInterceptorFn = (
     );
   }
 
-  const authService = inject(AuthenticationService);
-  const tokens = authService.getTokens();
-
-  const clonedRequest =
-    tokens && tokens.idToken
-      ? req.clone({
-        setHeaders: {
-          Authorization: 'Bearer ' + tokens.idToken,
-        },
-      })
-      : req;
+  const clonedRequest = withCognitoToken(req, inject(AuthenticationService));
 
   return next(clonedRequest).pipe(
     catchError((error: HttpErrorResponse) => {
@@ -123,3 +131,12 @@ export const tokenInterceptor: HttpInterceptorFn = (
     })
   );
 };
+function withCognitoToken(
+  req: HttpRequest<unknown>,
+  authService: AuthenticationService
+): HttpRequest<unknown> {
+  const tokens = authService.getTokens();
+  return tokens && tokens.idToken
+    ? req.clone({ setHeaders: { Authorization: 'Bearer ' + tokens.idToken } })
+    : req;
+}
