@@ -41,6 +41,11 @@ public partial class ApiGatewayPathParametersTests
     public void LocationResources_UseId(string path, string method) =>
         Assert.Contains(method, Resources[path]);
 
+    [Theory]
+    [InlineData("/reservations/{reservationId}/bill-split", "GET")]
+    public void ReservationResources_UseReservationId(string path, string method) =>
+        Assert.Contains(method, Resources[path]);
+
     [Fact]
     public void EveryLambdaRoute_ExistsInApiGatewayWithTheSamePathAndMethod()
     {

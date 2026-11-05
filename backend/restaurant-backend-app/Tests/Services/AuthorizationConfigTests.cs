@@ -16,6 +16,7 @@ public class AuthorizationConfigTests
     [InlineData("/group-reservations/{groupReservationId}/submit", "POST")]
     [InlineData("/guest/groups/{groupReservationId}/sessions", "GET")]
     [InlineData("/guest/groups/{groupReservationId}/sessions/{guestSessionId}", "DELETE")]
+    [InlineData("/reservations/{reservationId}/bill-split", "GET")] // owner customer or assigned waiter, checked in code
     public void OwnerEndpoints_UseCognitoAuthorizer(string path, string method) =>
         Assert.Equal("cognito_authorizer", AuthorizationType(path, method));
 

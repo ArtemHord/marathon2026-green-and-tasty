@@ -22,7 +22,13 @@ public static class OrderMapper
                 .Select(d => new OrderItemResponse
                 {
                     Dish = DishMapper.ToDishResponse(dishes.First(dish => dish.Id == d.DishId)),
-                    Quantity = d.Quantity
+                    Quantity = d.Quantity,
+                    Guests = d.Guests?.Select(g => new OrderItemGuestShareResponse
+                    {
+                        GuestSessionId = g.GuestSessionId,
+                        GuestName = g.GuestName,
+                        Quantity = g.Quantity,
+                    }).ToList(),
                 }).ToList(),
         };
     }

@@ -630,6 +630,25 @@ Response: `200 OK`
 "Pre order dish canceled successfully"
 ```
 
+### `GET` /reservations/{reservationId}/bill-split
+Split bill of the reservation's order (`cognito_authorizer`). Details, rules and decisions: "Split bill" below.
+
+Response: `200 OK`
+```json
+{
+  "participants": [
+    { "guestSessionId": "owner-<groupReservationId>", "name": "Yevhenii", "type": "Owner",
+      "items": [ { "dishId": "d3", "name": "Steak", "quantity": 1, "price": 220, "subtotal": 220 } ], "total": 220 },
+    { "guestSessionId": "s1", "name": "Andrii", "type": "Guest",
+      "items": [ { "dishId": "d1", "name": "Caesar Salad", "quantity": 2, "price": 180, "subtotal": 360 } ], "total": 360 }
+  ],
+  "total": 580,
+  "excludedCanceled": 0
+}
+```
+Errors: `401 { "error" }` no `sub` · `403 { "error" }` neither the reservation's customer nor its assigned waiter ·
+`404 { "error" }` reservation not found · `404 { "error" }` no order for the reservation (or the order is `Cancelled`).
+
 ### `PATCH` /reservations/{reservationId}/table
 Request body:
 ```json
@@ -898,6 +917,22 @@ Response: `200 OK`
     }
   ],
   "status": "Created"
+}
+```
+
+`guests` (split bill) — **only** on items whose order line has `Guests` (lines filled by a group submit, see
+"Split bill" below); for any other item the field is **absent** (old orders and regular pre-orders produce exactly the JSON above).
+Same for `GET /orders` and the `POST /orders` response (shared `OrderMapper`). The field is response-only: `guests` in
+`POST`/`PUT /orders` request bodies is ignored.
+```json
+{
+  "dish": { "id": "caesar", "name": "Caesar Salad", "price": 180, "...": "other DishResponse fields" },
+  "quantity": 4,
+  "guests": [
+    { "guestSessionId": "owner-<groupReservationId>", "guestName": "Yevhenii", "quantity": 1 },
+    { "guestSessionId": "s1", "guestName": "Andrii", "quantity": 2 },
+    { "guestSessionId": "s2", "guestName": "Olena", "quantity": 1 }
+  ]
 }
 ```
 
@@ -1285,7 +1320,7 @@ Error bodies:
    - no order (or `Cancelled`) → `400` "Pre-order for reservation … was not found.";
    - no guest dishes but the Owner has an order → submit succeeds: order → `SubmittedByCustomer`, group → `Submitted`, response `[]`.
 4. In memory: for each merged guest dish, if it is already in the order its quantity is increased, otherwise a new line is added;
-   order → `SubmittedByCustomer`.
+   order → `SubmittedByCustomer`. Each touched line also gets `Guests` (who ordered what, see "Split bill"); the response does not change.
 5. **Claim the group**: re-read it by key (consistent), it must still be `Open` (otherwise the same `400`s as in step 1), then a
    version-checked write `Open → Submitted` that **in the same write** stores `submittedGuestDishes` (the merged guest list from
    step 2) on the group. A version conflict → `400` "Group pre-order has already been submitted.". The compensation (reopen) clears it.
@@ -1361,7 +1396,62 @@ Full table and audit notes: `docs/features/group-preorder.md` → "Authorization
 | `GET /guest/groups/{groupReservationId}/sessions` | Owner | `cognito_authorizer` + handler `sub` (401) + `ValidateReservationOwnerAsync` (group → reservation → `customerId == sub`, 403) |
 | `DELETE /guest/groups/{groupReservationId}/sessions/{guestSessionId}` | Owner | `cognito_authorizer` + handler `sub` + `ValidateReservationOwnerAsync` (403); session must belong to the group (400), owner session cannot be removed (400) |
 | `POST /group-reservations/{groupReservationId}/submit` | Owner | `cognito_authorizer` + handler `sub` + `EnsureOwner` on the reservation from the body (403); the group must belong to that reservation (400) |
+| `GET /reservations/{reservationId}/bill-split` | Owner (customer of the reservation) **or** the assigned waiter | `cognito_authorizer` + handler `sub` (401) + `BillSplitService`: `reservation.customerId == sub` or `reservation.waiterId == sub` (case-insensitive, empty ids never match), else 403; checked after the reservation `404` and before the order `404` |
 | `GET /guest/invites/{token}` | Anyone with the invite token (anonymous) | `NONE` (public); the 32-hex invite token is the secret; unknown token → 404 |
 | `POST /guest/sessions` | Anyone who knows the `groupReservationId` (anonymous guest) | `NONE`; join rules in `CreateGuestSessionAsync` (group Open, reservation Reserved, free seat); returns a random 32-byte session token, only its SHA-256 is stored |
 | `GET /guest/sessions/{guestSessionId}`, `POST/DELETE …/dishes`, `GET …/menu`, `POST …/submit` | The guest holding **that** session's token | `NONE` + `GuestAuthorizationService`: `Authorization: Bearer <session token>` (header name case-insensitive), SHA-256 of the token is looked up and must belong to the session in the path — another guest's token → 401; missing/malformed header or token (incl. a Cognito JWT) → 401. The owner session has no token, so it cannot be modified through these endpoints |
 | `GET /guest/groups/{groupReservationId}/status` | Anyone (anonymous) | `NONE`, no check — returns only status, participant count and capacity |
+
+## Split bill
+
+Feature doc: `docs/features/split-bill.md` (repo root). Two parts: the group submit records who ordered what in the order,
+`GET /reservations/{reservationId}/bill-split` computes the split from it. Nothing else is stored (no BillSplits table).
+
+### Data: `OrderItem.guests`
+- `OrderItem.Guests: [{ guestSessionId, guestName, quantity }]`, DynamoDB attribute `guests` in each item of `Orders.dishes`;
+  nullable — old orders, regular pre-orders and lines the group submit did not touch have none.
+- Filled **only** by `POST /group-reservations/{groupReservationId}/submit`, for every `dishId` the submit merges:
+  - one share per **submitted guest** session that has the dish (quantities of that session summed; sessions in storage order);
+    unsubmitted sessions, the owner session's cart and cart lines with quantity ≤ 0 are not shares;
+  - if the order already had the line, the part of it no share covers (the whole line when it had no `Guests`) becomes the
+    **Owner share** first: `guestSessionId = owner-<groupReservationId>`, `guestName` = the owner session's name, else the
+    Cognito name, else `"Owner"` (a failing name lookup never fails the submit); no Owner share when that part is 0.
+  - **Invariant**: for every line with `Guests`, Σ `guests[].quantity` == `quantity` (and every share has quantity > 0).
+- The submit response (`[{ dishId, quantity }]`) and the group's `submittedGuestDishes` (snapshot input) are unchanged.
+- `PUT /orders/{reservationId}` (customer or waiter edit) rewrites the lines **without** `Guests`, so after an edit the
+  whole order is the Owner's again in the split (the edit replaces what the guests chose).
+- `guests` cannot be set through request bodies (`[JsonIgnore]` on the entity).
+
+### `GET /reservations/{reservationId}/bill-split`
+Order of checks: reservation (`404`) → caller is `reservation.customerId` or `reservation.waiterId` (`403`) → order exists and is
+not `Cancelled` (`404`). A stranger therefore never learns whether the reservation has an order.
+
+Building the split (the order is read with a consistent read; dishes in one batch):
+- Lines with quantity ≤ 0 are ignored.
+- `excludedCanceled` = number of order lines with `state = Canceled` (`OrderItemState.Canceled`, set by
+  `PATCH …/order/cancellations/{dishId}`); they are not in `items` and not in any sum.
+- A line without `Guests` belongs entirely to the Owner. A line with `Guests` is split by its shares (share
+  `owner-<groupReservationId>` → Owner); shares are capped at the line quantity, the part not covered by shares goes to the Owner —
+  the split always adds up to the order even for inconsistent data.
+- Participants: Owner first (`type: "Owner"`, `guestSessionId: "owner-<groupReservationId>"`, or `null` if the reservation has no
+  group reservation), then guests (`type: "Guest"`, `guestSessionId` = their session id, `name` = the name stored in the share) in
+  order of first appearance in the order lines. Owner `name`: the name stored in the Owner share, else the Cognito name of
+  `reservation.customerId`, else `"Owner"`.
+- `items` per participant are merged by `dishId`; `price` = **current** `Dishes.price`; `subtotal = price × quantity`;
+  participant `total` = Σ `subtotal`; `total` = Σ participant totals.
+
+### Decisions on behaviour not defined by the spec
+- **Participants are registered from all lines, including `Canceled` ones**: a guest whose only dish the waiter canceled stays in
+  `participants` with `items: []`, `total: 0` (it does not silently disappear from the bill). An Owner with no lines at all (the
+  order has only guests' dishes) is not listed; an order without lines → `participants: []`, `total: 0`.
+- `excludedCanceled` counts **lines** (one per `dishId`), not portions; a Canceled line with quantity 0 is counted too.
+- Order without any `Guests` (regular pre-order, or an order created before this feature) → a single Owner participant with all
+  billable lines.
+- A dish deleted from the catalog cannot be priced and is skipped (its line is not in `items`/sums and not in `excludedCanceled`).
+- Access by `sub` only: any waiter other than `reservation.waiterId` gets `403` (unlike `GET /orders/{reservationId}`, which lets
+  any waiter read the order).
+
+### Known limitations
+- Prices are current: if a dish price changes after the order, the split shows the new price.
+- The waiter cancels a whole line (`dishId`), so the shares of every participant on that line are excluded together.
+- An edit of the order after the group submit (`PUT /orders/{reservationId}`) drops `Guests`, see above.

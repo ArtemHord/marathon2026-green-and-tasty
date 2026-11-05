@@ -268,12 +268,31 @@ public class GroupReservationService(
 
         order.Dishes ??= [];
 
+        // Split bill: who ordered what, per dishId (one share per submitted guest session, first-appearance order).
+        var guestSharesByDish = GuestSharesByDish(submittedSessions);
+        string ownerShareId = GuestSessionIds.ForOwner(groupReservationId);
+        string? ownerName = null;
+
         foreach (var dish in mergedDishes)
         {
             var existing = order.Dishes.FirstOrDefault(d => d.DishId == dish.DishId);
+            var guestShares = guestSharesByDish[dish.DishId];
 
             if (existing is not null)
             {
+                // The part of the line nobody is recorded for (the whole line if it has no Guests yet) is the Owner's:
+                // keeps Σ Guests[].Quantity == Quantity after the guests' quantities are added.
+                int ownerQuantity = existing.Quantity - (existing.Guests?.Sum(g => g.Quantity) ?? 0);
+                existing.Guests ??= [];
+                if (ownerQuantity > 0)
+                {
+                    ownerName ??= await ResolveOwnerNameAsync(sessions, userId);
+                    AddShare(existing.Guests, ownerShareId, ownerName, ownerQuantity);
+                }
+
+                foreach (var share in guestShares)
+                    AddShare(existing.Guests, share.GuestSessionId, share.GuestName, share.Quantity);
+
                 existing.Quantity += dish.Quantity;
                 existing.State = OrderItemState.Pending;
             }
@@ -284,6 +303,7 @@ public class GroupReservationService(
                     DishId = dish.DishId,
                     Quantity = dish.Quantity,
                     State = OrderItemState.Pending,
+                    Guests = guestShares,
                 });
             }
         }
@@ -316,6 +336,49 @@ public class GroupReservationService(
 
         // 7. merged list
         return mergedDishes;
+    }
+
+    /// <summary>dishId → one share per submitted guest session (quantities of that session summed), sessions in storage order.</summary>
+    private static Dictionary<string, List<OrderItemGuestShare>> GuestSharesByDish(IEnumerable<GuestSession> submittedSessions) =>
+        submittedSessions
+            .SelectMany(s => (s.Dishes ?? []).Where(d => d.Quantity > 0).Select(d => (Session: s, Dish: d)))
+            .GroupBy(x => x.Dish.DishId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(x => x.Session.Id)
+                    .Select(sg => new OrderItemGuestShare
+                    {
+                        GuestSessionId = sg.Key,
+                        GuestName = sg.First().Session.GuestName,
+                        Quantity = sg.Sum(x => x.Dish.Quantity),
+                    })
+                    .ToList());
+
+    private static void AddShare(List<OrderItemGuestShare> shares, string guestSessionId, string guestName, int quantity)
+    {
+        var same = shares.FirstOrDefault(s => s.GuestSessionId == guestSessionId);
+        if (same is not null)
+            same.Quantity += quantity;
+        else
+            shares.Add(new OrderItemGuestShare { GuestSessionId = guestSessionId, GuestName = guestName, Quantity = quantity });
+    }
+
+    /// <summary>Owner's name for the Owner share: the owner session's name (as in the snapshot), else the Cognito name, else "Owner".</summary>
+    private async Task<string> ResolveOwnerNameAsync(IEnumerable<GuestSession> sessions, string userId)
+    {
+        var ownerSessionName = sessions.FirstOrDefault(s => s.IsOwnerSession)?.GuestName;
+        if (!string.IsNullOrWhiteSpace(ownerSessionName))
+            return ownerSessionName;
+
+        try
+        {
+            var name = await userService.GetUserName(userId);
+            return string.IsNullOrWhiteSpace(name) ? DefaultOwnerName : name;
+        }
+        catch (Exception)
+        {
+            return DefaultOwnerName; // the name is cosmetic: never fail the submit because of it
+        }
     }
 
     /// <summary>Order line the restaurant will serve: not canceled by the waiter and with a positive quantity.</summary>

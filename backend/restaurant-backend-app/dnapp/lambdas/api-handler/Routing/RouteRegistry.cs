@@ -108,6 +108,7 @@ public static class RouteRegistry
         services.AddSingleton<ITableService, TableService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<IOrderService, OrderService>();
+        services.AddSingleton<IBillSplitService, BillSplitService>();
         services.AddSingleton<IGroupReservationService, GroupReservationService>();
         services.AddSingleton<IReservationService, ReservationService>();
         services.AddSingleton<IFeedbackService, FeedbackService>();
@@ -181,7 +182,8 @@ public static class RouteRegistry
             new RouteHandler(new Route(HttpMethods.POST, "/orders/{reservationId}/submit"), ActivatorUtilities.CreateInstance<SubmitOrderHandler>(provider)),
             new RouteHandler(new Route(HttpMethods.POST, "/orders/{reservationId}/unsubmit"), ActivatorUtilities.CreateInstance<UnsubmitOrderHandler>(provider)),
             new RouteHandler(new Route(HttpMethods.PATCH, "/reservations/{reservationId}/order/confirmations/{dishId}"), ActivatorUtilities.CreateInstance<ConfirmPreOrderDishHandler>(provider)),
-            new RouteHandler(new Route(HttpMethods.PATCH, "/reservations/{reservationId}/order/cancellations/{dishId}"), ActivatorUtilities.CreateInstance<CancelPreOrderDishHandler>(provider))
+            new RouteHandler(new Route(HttpMethods.PATCH, "/reservations/{reservationId}/order/cancellations/{dishId}"), ActivatorUtilities.CreateInstance<CancelPreOrderDishHandler>(provider)),
+            new RouteHandler(new Route(HttpMethods.GET, "/reservations/{reservationId}/bill-split"), ActivatorUtilities.CreateInstance<GetBillSplitHandler>(provider))
         ];
 
         List<RouteHandler> GetGuestAndGroupRoutes() => [
