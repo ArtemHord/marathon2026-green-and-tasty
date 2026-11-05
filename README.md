@@ -1,3 +1,66 @@
+# Green & Tasty — IT Marathon 2026 submission
+
+**Live app:** https://d1xeydihesnzu2.cloudfront.net
+**API:** https://xtasg7ywhc.execute-api.us-west-2.amazonaws.com/develop (region `us-west-2`)
+
+## Demo accounts
+
+| Role | Email | Password |
+|---|---|---|
+| Customer (reservation Owner) | `gt.customer@example.com` | provided separately (not committed) |
+| Waiter | `gt.waiter1@example.com` | provided separately (not committed) |
+| Waiter | `gt.waiter2@example.com` | provided separately (not committed) |
+
+Guests of a group pre-order don't need an account — they join through the invite link.
+
+## What is implemented
+
+**Backend (homework levels 1–3, `backend/restaurant-backend-app`)**
+
+| Level | Endpoint | Purpose |
+|---|---|---|
+| L1 | `GET /guest/groups/{groupReservationId}/sessions` | Owner sees participants, their dishes, per-participant and group totals |
+| L2 | `GET /reservations/{reservationId}/guest-session-id` | Owner's own session id (created on first call) |
+| L2 | `POST /group-reservations/{groupReservationId}/submit` | Consolidated pre-order: submitted carts merged by `dishId` into the order, order → `SubmittedByCustomer`, group → `Submitted` |
+| L3 | `DELETE /guest/groups/{groupReservationId}/sessions/{guestSessionId}` | Owner removes a guest, gets the updated snapshot |
+
+All Owner endpoints require a Cognito token and check that the caller owns the reservation (401 / 403 / 404 / 400 as documented in [`backend/restaurant-backend-app/docs/ApiRoutes.md`](backend/restaurant-backend-app/docs/ApiRoutes.md)). The Owner's own dishes come from their regular pre-order, so "My Pre-Order" and Grand Total match what the restaurant receives.
+
+**Frontend (`frontend/restaurant-frontend-app`)** — Owner screen `/reservations/{reservationId}/group-order`: participant cards, consolidated Grand Total from submitted carts, submit confirmation modal, read-only "Sent to Restaurant" state, auto-refresh every 15 s while the group is open ("Updated at…", Refresh, stale-data notice, single timer), Remove Guest dialog. Layout follows `homework-design/` and the Figma spec `homework-design/figma-owner-flow.md`. Demo without backend: `/reservations/demo-reservation/group-order?demo`.
+
+## How to check it, step by step
+
+1. Sign in as the customer → **Book a Table** → book for 3+ guests.
+2. **Reservations** → the reservation → copy the invite link; open it in two incognito windows, join as two guests, add dishes (one dish in both carts), submit one cart only.
+3. As the customer add your own pre-order, then open `/reservations/<id>/group-order`: both guests, your dishes under "My Pre-Order", the yellow notice about the guest who hasn't submitted, Grand Total = your dishes + submitted carts only.
+4. Remove the second guest (**Remove Guest** → confirm) — list and totals update. Within 15 s changes made by guests appear without reload.
+5. **Submit Pre-Order** → confirm → "Sent to Restaurant", screen becomes read-only (also after reload).
+6. Sign in as the waiter of that location → the reservation's pre-order contains the merged dishes.
+
+Automated checks:
+```bash
+(cd backend/restaurant-backend-app && dotnet test)                     # 617 tests
+(cd frontend/restaurant-frontend-app && npm ci && npm run test:hw)     # homework + contract specs
+API_URL=… CUSTOMER_EMAIL=… CUSTOMER_PASSWORD=… OTHER_CUSTOMER_EMAIL=… OTHER_CUSTOMER_PASSWORD=… scripts/e2e-group-preorder.sh
+API_URL=… CUSTOMER_EMAIL=… CUSTOMER_PASSWORD=… WAITER1_EMAIL=… WAITER1_PASSWORD=… scripts/e2e-preorder-regression.sh
+scripts/smoke.sh
+```
+
+## Bugs found and fixed in the original code
+
+- **IDOR on `GET /reservations/{id}/invite-token`** — any signed-in user could fetch the invite token of someone else's reservation and join it. Now Owner-only (403), 401 without a token.
+- **Owner session was never created** — `CreateGroupOwnerSessionAsync` was never called, so the Owner endpoints could not work; the session is now created on first `guest-session-id` call with a deterministic id, and the snapshot shows the Owner even before that.
+- **Double submit** — two concurrent group submits added the guests' dishes to the order twice. Fixed with optimistic locking (`[DynamoDBVersion]`) on the order and the group reservation; the second submit gets 400.
+- **`GET /locations/{id}/tables/all` missing from API Gateway** — conflicting path parameter names (`{id}` vs `{locationId}`) under `/locations` prevented the resource from being created; unified to `{id}` with a test that checks all routes.
+- Also: snapshot used `Guest` type for the Owner, the API Gateway resource for sessions had a typo (`/guest/group/…`), guest auth returned 500 on malformed headers, `/guest/invites` blocked the Owner's own screen for full or submitted groups.
+
+## Docs
+
+- [`docs/features/group-preorder.md`](docs/features/group-preorder.md) — scenario, API contract, decisions, authorization table, limitations
+- [`docs/ai-workflow.md`](docs/ai-workflow.md) — how the code was produced by Claude Code agents (orchestrator, backend-dev, frontend-dev, tester, reviewer) and the review log
+
+---
+
 # Deployment Guide
 
 This repo uses three deployment tracks:
