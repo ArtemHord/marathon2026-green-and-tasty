@@ -24,8 +24,12 @@ req() {
   local method="$1" path="$2" body="${3:-}" token="${4:-}" out
   local args=(-sS --max-time 30 -X "$method" -H 'Content-Type: application/json' -w $'\n%{http_code}')
   [[ -n "$token" ]] && args+=(-H "Authorization: Bearer $token")
-  [[ -n "$body" ]] && args+=(--data "$body")
-  out="$(curl "${args[@]}" "$API$path")" || die "curl $method $path впав"
+  # тіло через stdin: base64-фото не впирається в ліміт довжини аргументів
+  if [[ -n "$body" ]]; then
+    out="$(curl "${args[@]}" --data-binary @- "$API$path" <<<"$body")" || die "curl $method $path впав"
+  else
+    out="$(curl "${args[@]}" "$API$path")" || die "curl $method $path впав"
+  fi
   HTTP_CODE="${out##*$'\n'}"
   HTTP_BODY="${out%$'\n'*}"
 }
@@ -222,6 +226,43 @@ for i in 0 1; do
     echo "  + стіл #$n ($cap місць) у $loc"
   done
 done
+
+# ---------- 7. фото страв (опційно) ----------
+# Кладеш <slug>.jpg|.jpeg|.png|.webp у SEED_IMAGES_DIR (за замовчуванням ../dish-images поза репо),
+# slug = назва страви в нижньому регістрі, не-літери/цифри → "-" (напр. honey-cake-medovik.png).
+# Вантажимо лише стравам без imageUrl (FORCE_IMAGES=1 — перезалити всі). PUT /dishes/{id}
+# вимагає будь-який Cognito-токен; бекенд кладе файл у images-бакет і пише imageUrl.
+IMAGES_DIR="${SEED_IMAGES_DIR:-$REPO_ROOT/../dish-images}"
+slugify() { tr '[:upper:]' '[:lower:]' <<<"$1" | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g'; }
+if [[ -d "$IMAGES_DIR" ]]; then
+  log "Фото страв з $IMAGES_DIR"
+  req GET /dishes; expect 200 "GET /dishes"
+  DISHES_JSON="$HTTP_BODY"
+  TMP_IMG="$(mktemp -d)"; trap 'rm -rf "$TMP_IMG"' EXIT
+  for row in "${DISHES[@]}"; do
+    IFS='|' read -r name type price weight cal prot fats carbs vit desc <<<"$row"
+    slug="$(slugify "$name")"; img=""
+    for ext in jpg jpeg png webp; do [[ -f "$IMAGES_DIR/$slug.$ext" ]] && { img="$IMAGES_DIR/$slug.$ext"; break; }; done
+    [[ -z "$img" ]] && { echo "  - немає $slug.{jpg,png,webp}"; continue; }
+    dish="$(jq -c --arg n "$name" 'map(select(.name == $n)) | .[0] // empty' <<<"$DISHES_JSON")"
+    [[ -z "$dish" ]] && die "страву '$name' не знайдено в GET /dishes"
+    if [[ -z "${FORCE_IMAGES:-}" && -n "$(jq -r '.imageUrl // empty' <<<"$dish")" ]]; then
+      echo "  = фото '$name' вже є"; continue
+    fi
+    # Стискаємо до 800px JPEG (~100–200 KB): Lambda-payload ≤ 6 MB, і сторінка не тягне мегабайти
+    if command -v sips >/dev/null; then
+      sips -s format jpeg -s formatOptions 82 -Z 800 "$img" --out "$TMP_IMG/$slug.jpg" >/dev/null && img="$TMP_IMG/$slug.jpg"
+    fi
+    b64="$(base64 <"$img" | tr -d '\n')"
+    body="$(jq -n --arg n "$name" --arg d "$desc" --arg t "$type" --argjson p "$price" --arg w "$weight" \
+      --arg cal "$cal" --arg pr "$prot" --arg f "$fats" --arg c "$carbs" --arg v "$vit" --argjson l "$LOC_IDS_JSON" \
+      --rawfile img /dev/stdin \
+      '{name:$n, description:$d, dishType:$t, price:$p, weight:$w, calories:$cal, proteins:$pr, fats:$f,
+        carbohydrates:$c, vitamins:$v, locationIds:$l, state:"Available", imageBase64:($img | rtrimstr("\n"))}' <<<"$b64")"
+    req PUT "/dishes/$(jq -r .id <<<"$dish")" "$body" "$CUSTOMER_TOKEN"; expect 200 "PUT /dishes '$name' (фото)"
+    echo "  + фото '$name' ($(( $(wc -c <"$img") / 1024 )) KB)"
+  done
+fi
 
 # ---------- підсумок ----------
 log "Готово"
