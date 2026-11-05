@@ -102,6 +102,43 @@ describe('Контракт · екран Owner з реальним API', () => {
     });
   });
 
+  describe('Owner з order (новий контракт: Owner.items = рядки order, isSubmitted = є рядки)', () => {
+    function withOwnerOrder(): GroupSessionsResponse {
+      const sessions = structuredClone(REAL_SESSIONS);
+      sessions.participants[0] = {
+        id: 'owner-grp-1', type: 'Owner', name: 'Yevhenii', isSubmitted: true, total: 400,
+        items: [{ dish: caesar, quantity: 1 }, { dish: tomYum, quantity: 1 }],
+      };
+      sessions.total = 1160;
+      return sessions;
+    }
+
+    it('Grand Total включає страви Owner: 540 + 400 = $940; Caesar × 4, Tom Yum × 1 (лише від Owner)', () => {
+      service.getSessions$.and.returnValue(of(withOwnerOrder()));
+      const { element } = create();
+
+      expect(element.querySelector('.grand-total')?.textContent).toContain('$940.00');
+      expect(element.textContent).toContain('Caesar Salad × 4');
+      expect(element.textContent).toContain('Tom Yum × 1'); // страва Owner, а не несабмічена Olena (у неї теж Tom Yum)
+      expect(element.textContent).toContain('My Pre-Order');
+    });
+
+    it('плашка рахує лише гостей: Owner submitted, Olena — ні → «1 participant…»', () => {
+      service.getSessions$.and.returnValue(of(withOwnerOrder()));
+      const { element } = create();
+
+      expect(element.querySelector('.notice')?.textContent).toContain("1 participant hasn't submitted");
+    });
+
+    it('усі гості підтвердили, Owner з order → плашки немає', () => {
+      const sessions = withOwnerOrder();
+      sessions.participants.forEach((p) => (p.isSubmitted = true));
+      service.getSessions$.and.returnValue(of(sessions));
+
+      expect(create().element.querySelector('.notice')).toBeNull();
+    });
+  });
+
   describe('polling: один таймер', () => {
     it('стартує лише поки Open: перше завантаження не silent, далі кожні 15 с — silent', fakeAsync(() => {
       create();
