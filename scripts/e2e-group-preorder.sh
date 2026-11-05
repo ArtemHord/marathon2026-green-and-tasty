@@ -69,16 +69,27 @@ expect() {
   local c; for c in $1; do [[ "$HTTP_CODE" == "$c" ]] && return 0; done
   die "$2 → очікував HTTP $1, отримав $HTTP_CODE: $HTTP_BODY"
 }
-assert_jq() { # assert_jq '<jq-фільтр, що повертає true>' "<опис>" [jq-аргументи…]
+# jq-опції з двома значеннями (--arg name value, --argjson name json) можна передати ПЕРЕД фільтром:
+#   assert_jq [--arg n v …] '<jq-фільтр, що повертає true>' "<опис>" [jq-аргументи…]
+JQ_OPTS=()
+take_jq_opts() { # збирає провідні --arg/--argjson у JQ_OPTS; повертає кількість спожитих аргументів у JQ_SHIFT
+  JQ_OPTS=(); JQ_SHIFT=0
+  while [[ "${1:-}" == --arg || "${1:-}" == --argjson ]]; do
+    JQ_OPTS+=("$1" "$2" "$3"); shift 3; JQ_SHIFT=$((JQ_SHIFT + 3))
+  done
+}
+assert_jq() {
+  take_jq_opts "$@"; shift "$JQ_SHIFT"
   local filter="$1" what="$2"; shift 2
-  jq -e "$@" "$filter" <<<"$HTTP_BODY" >/dev/null || die "$what — не виконано. Тіло: $HTTP_BODY"
+  jq -e ${JQ_OPTS[@]+"${JQ_OPTS[@]}"} "$@" "$filter" <<<"$HTTP_BODY" >/dev/null || die "$what — не виконано. Тіло: $HTTP_BODY"
   ok "$what"
 }
 # Тіло помилки: 401/403/404 → {"error": …}, 400 бізнес-правил → {"message": …, "errorCode": …}
 err_msg() { jq -r '.message // .error // .Message // empty' <<<"$HTTP_BODY" 2>/dev/null || true; }
 
-soft_jq() { # soft_jq '<jq-фільтр>' "<опис>" — як assert_jq, але не зупиняє флоу
-  if jq -e "$1" <<<"$HTTP_BODY" >/dev/null 2>&1; then ok "$2"
+soft_jq() { # soft_jq [--arg n v …] '<jq-фільтр>' "<опис>" — як assert_jq, але не зупиняє флоу
+  take_jq_opts "$@"; shift "$JQ_SHIFT"
+  if jq -e ${JQ_OPTS[@]+"${JQ_OPTS[@]}"} "$1" <<<"$HTTP_BODY" >/dev/null 2>&1; then ok "$2"
   else printf '  \033[33m✘\033[0m %s — тіло: %s\n' "$2" "$HTTP_BODY"; FRONTEND_ISSUES+=("$2: $HTTP_BODY"); fi
 }
 
