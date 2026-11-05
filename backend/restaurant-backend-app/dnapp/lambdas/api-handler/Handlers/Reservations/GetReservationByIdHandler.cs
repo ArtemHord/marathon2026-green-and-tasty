@@ -2,6 +2,7 @@
 using Amazon.Lambda.Core;
 using APIHandler.Helpers;
 using APIHandler.Mappers;
+using APIHandler.Repositories.Tables;
 using APIHandler.Services.Locations;
 using APIHandler.Services.Orders;
 using APIHandler.Services.Reservations;
@@ -15,9 +16,11 @@ public class GetReservationByIdHandler : IApiRequestHandler
     private readonly IReservationService _reservationService;
     private readonly ILocationService _locationService;
     private readonly IOrderService _orderService;
+    private readonly ITableRepository _tableRepository;
 
-    public GetReservationByIdHandler(IOrderService orderService, ILocationService locationService, IReservationService reservationService)
+    public GetReservationByIdHandler(IOrderService orderService, ILocationService locationService, IReservationService reservationService, ITableRepository tableRepository)
     {
+        _tableRepository = tableRepository ?? throw new ArgumentNullException(nameof(tableRepository));
         _orderService = orderService ?? throw new ArgumentNullException(nameof(orderService));
         _locationService = locationService ?? throw new ArgumentNullException(nameof(locationService));
         _reservationService = reservationService ?? throw new ArgumentNullException(nameof(reservationService));
@@ -54,7 +57,9 @@ public class GetReservationByIdHandler : IApiRequestHandler
 
         var order = await _orderService.GetOrderByReservationIdAsync(reservation.Id);
 
-        var reservationResponse = ReservationMapper.ToReservationResponse(reservation, location.Address, order);
+        var table = await _tableRepository.TryGetTableAsync(reservation.TableId);
+
+        var reservationResponse = ReservationMapper.ToReservationResponse(reservation, location.Address, order, table: table);
         return ResponseBuilder.CreateSuccessResponse(reservationResponse);
     }
 }

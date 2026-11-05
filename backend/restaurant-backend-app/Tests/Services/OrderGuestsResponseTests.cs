@@ -5,6 +5,8 @@ using APIHandler.Constants.Orders;
 using APIHandler.Entities;
 using APIHandler.Handlers.Order;
 using APIHandler.Mappers;
+using APIHandler.Repositories.Reservations;
+using APIHandler.Repositories.Tables;
 using APIHandler.Services.Dishes;
 using APIHandler.Services.Orders;
 using Moq;
@@ -25,10 +27,11 @@ public class OrderGuestsResponseTests
     private static readonly Dish Steak = new() { Id = "steak", Name = "Steak", Description = "d", Price = 300, Weight = "w", Calories = "c", Proteins = "p", Fats = "f", Carbohydrates = "c", Vitamins = "v", DishType = DishType.MainCourse, State = DishState.Available };
 
     private static readonly string[] OrderFields = ["orderId", "reservationId", "reservationAddress", "reservationTime", "orderItems", "status"];
-    private static readonly string[] ItemFieldsWithoutGuests = ["dish", "quantity"];
+    // "state" was added by the manual-QA fix (Cart showed "(Unknown)" because the field was missing); "guests" is never there
+    private static readonly string[] ItemFieldsWithoutGuests = ["dish", "quantity", "state"];
 
     [Fact]
-    public async Task OldOrderWithoutGuests_JsonIsExactlyAsBefore()
+    public async Task OldOrderWithoutGuests_NoGuestsField()
     {
         var body = await GetOrderJson(Order(Line("caesar", 2), Line("steak", 1)));
 
@@ -56,7 +59,7 @@ public class OrderGuestsResponseTests
         Assert.Equal(OrderFields, json.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
 
         var withGuests = items[0];
-        Assert.Equal(["dish", "quantity", "guests"], withGuests.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(["dish", "quantity", "state", "guests"], withGuests.EnumerateObject().Select(p => p.Name).ToArray());
         Assert.Equal("caesar", withGuests.GetProperty("dish").GetProperty("id").GetString());
         Assert.Equal(3, withGuests.GetProperty("quantity").GetInt32());
         var guests = withGuests.GetProperty("guests").EnumerateArray().ToList();
@@ -94,7 +97,8 @@ public class OrderGuestsResponseTests
         var orderService = new Mock<IOrderService>();
         orderService.Setup(s => s.GetOrdersByCustomerIdAsync(CustomerId)).ReturnsAsync([Order(caesar, Line("steak", 1))]);
 
-        var response = await new GetOrdersByCustomerHandler(DishService().Object, orderService.Object).HandleRequest(Request(), Context());
+        var response = await new GetOrdersByCustomerHandler(DishService().Object, orderService.Object,
+            new Mock<IReservationRepository>().Object, new Mock<ITableRepository>().Object).HandleRequest(Request(), Context());
 
         Assert.Equal(200, response.StatusCode);
         using var json = JsonDocument.Parse(response.Body);
@@ -110,7 +114,8 @@ public class OrderGuestsResponseTests
         var orderService = new Mock<IOrderService>();
         orderService.Setup(s => s.GetOrderByReservationIdAsync(ReservationId)).ReturnsAsync(order);
 
-        var response = await new GetOrderByReservationHandler(DishService().Object, orderService.Object).HandleRequest(Request(), Context());
+        var response = await new GetOrderByReservationHandler(DishService().Object, orderService.Object,
+            new Mock<IReservationRepository>().Object, new Mock<ITableRepository>().Object).HandleRequest(Request(), Context());
 
         Assert.Equal(200, response.StatusCode);
         return response.Body;

@@ -41,4 +41,14 @@ public class ReservationResponse
 
     [JsonPropertyName("guestInviteLinkAvailable")]
     public bool GuestInviteLinkAvailable { get; set; }
+
+    /// <summary>Number of the reserved table (<c>tableId</c> is its UUID). Omitted if the table could not be loaded.</summary>
+    [JsonPropertyName("tableNumber")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? TableNumber { get; set; }
+
+    /// <summary>Display label of the table, <c>"Table {tableNumber}"</c>. Omitted if the table could not be loaded.</summary>
+    [JsonPropertyName("tableName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TableName { get; set; }
 }

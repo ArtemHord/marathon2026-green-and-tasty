@@ -72,7 +72,7 @@ public class ReservationService : IReservationService
         if (request.GuestCount >= 2)
             await _groupReservationService.CreateGroupReservationAsync(reservation.Id);
 
-        return ReservationMapper.ToReservationResponse(reservation, location.Address);
+        return ReservationMapper.ToReservationResponse(reservation, location.Address, table: table);
     }
 
     public async Task<string> GetLocationIdForReservation(string reservationId)
@@ -143,7 +143,7 @@ public class ReservationService : IReservationService
         await _reservationRepository.SaveReservationAsync(reservation);
 
         logger.Log($"Reservation {reservationId} table updated to {newTableId} by waiter {callerId}.");
-        return await BuildReservationResponseWithDetailsAsync(reservation);
+        return await BuildReservationResponseWithDetailsAsync(reservation, newTable);
     }
 
     private async Task ValidateReservationAsync(Reservation reservation, Table table)
@@ -296,12 +296,12 @@ public class ReservationService : IReservationService
         }
     }
 
-    private async Task<ReservationResponse> BuildReservationResponseWithDetailsAsync(Reservation reservation)
+    private async Task<ReservationResponse> BuildReservationResponseWithDetailsAsync(Reservation reservation, Table table)
     {
         var location = await _locationService.GetLocationByTableIdAsync(reservation.TableId);
         var address = location?.Address ?? "Unknown address";
         Order? reservationOrder = await _orderService.GetOrderByReservationIdAsync(reservation.Id);
 
-        return ReservationMapper.ToReservationResponse(reservation, address, reservationOrder);
+        return ReservationMapper.ToReservationResponse(reservation, address, reservationOrder, table: table);
     }
 }

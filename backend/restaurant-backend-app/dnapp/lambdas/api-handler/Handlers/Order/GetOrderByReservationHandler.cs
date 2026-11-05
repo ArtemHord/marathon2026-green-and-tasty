@@ -3,6 +3,8 @@ using Amazon.Lambda.Core;
 using APIHandler.Helpers;
 using APIHandler.Mappers;
 using APIHandler.Models.Users;
+using APIHandler.Repositories.Reservations;
+using APIHandler.Repositories.Tables;
 using APIHandler.Services.Dishes;
 using APIHandler.Services.Orders;
 using System;
@@ -15,9 +17,17 @@ public class GetOrderByReservationHandler : IApiRequestHandler
 {
     private readonly IDishService _dishService;
     private readonly IOrderService _orderService;
+    private readonly IReservationRepository _reservationRepository;
+    private readonly ITableRepository _tableRepository;
 
-    public GetOrderByReservationHandler(IDishService dishService, IOrderService orderService)
+    public GetOrderByReservationHandler(
+        IDishService dishService,
+        IOrderService orderService,
+        IReservationRepository reservationRepository,
+        ITableRepository tableRepository)
     {
+        _reservationRepository = reservationRepository ?? throw new ArgumentNullException(nameof(reservationRepository));
+        _tableRepository = tableRepository ?? throw new ArgumentNullException(nameof(tableRepository));
         _dishService = dishService ?? throw new ArgumentNullException(nameof(dishService));
         _orderService = orderService ?? throw new ArgumentNullException(nameof(orderService));
     }
@@ -52,7 +62,11 @@ public class GetOrderByReservationHandler : IApiRequestHandler
         var dishIds = order.Dishes.Select(d => d.DishId).ToList();
         var dishes = await _dishService.GetDishesByIdsAsync(dishIds);
 
-        var orderResponse = OrderMapper.ToOrderResponse(order, dishes);
+        // current reservation times (UTC) and table number for the waiter pre-order page header
+        var reservation = await _reservationRepository.TryGetReservationAsync(order.ReservationId);
+        var table = await _tableRepository.TryGetTableAsync(reservation?.TableId);
+
+        var orderResponse = OrderMapper.ToOrderResponse(order, dishes, reservation, table);
         return ResponseBuilder.CreateSuccessResponse(orderResponse);
     }
 }

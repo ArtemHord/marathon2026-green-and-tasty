@@ -23,7 +23,10 @@ public static class ReservationMapper
     };
 
 
-    public static ReservationResponse ToReservationResponse(Reservation reservation, string address, Order? order = null, string restaurantName = "Green & Tasty", bool guestInviteLinkAvailable = false)
+    /// <summary>Display label of a table, the same one the frontend builds from <c>tableNumber</c>.</summary>
+    public static string TableLabel(Table table) => $"Table {table.TableNumber}";
+
+    public static ReservationResponse ToReservationResponse(Reservation reservation, string address, Order? order = null, string restaurantName = "Green & Tasty", bool guestInviteLinkAvailable = false, Table? table = null)
     => new()
     {
         Id = reservation.Id,
@@ -38,5 +41,7 @@ public static class ReservationMapper
         CustomerId = reservation.CustomerId, // for waiter dashboard
         HasSubmittedPreOrder = order is not null && order.Status == OrderStatus.Submitted,
         GuestInviteLinkAvailable = guestInviteLinkAvailable,
+        TableNumber = table?.TableNumber,
+        TableName = table is null ? null : TableLabel(table),
     };
 }

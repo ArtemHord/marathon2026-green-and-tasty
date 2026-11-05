@@ -10,6 +10,7 @@ using APIHandler.Models.Users;
 using APIHandler.Repositories.GroupReservations;
 using APIHandler.Repositories.GuestSessions;
 using APIHandler.Repositories.Reservations;
+using APIHandler.Repositories.Tables;
 using APIHandler.Services.GroupReservations;
 using APIHandler.Services.Locations;
 using APIHandler.Services.Orders;
@@ -29,13 +30,16 @@ public class GetReservationsForUserHandler : IApiRequestHandler
     private readonly ILocationService _locationService;
     private readonly IOrderService _orderService;
     private readonly IGroupReservationRepository _groupReservationRepository;
+    private readonly ITableRepository _tableRepository;
 
     public GetReservationsForUserHandler(
         IReservationRepository reservationRepository,
         ILocationService locationService,
         IOrderService orderService,
-        IGroupReservationRepository groupReservationRepository)
+        IGroupReservationRepository groupReservationRepository,
+        ITableRepository tableRepository)
     {
+        _tableRepository = tableRepository ?? throw new ArgumentNullException(nameof(tableRepository));
         _reservationRepository = reservationRepository ?? throw new ArgumentNullException(nameof(reservationRepository));
         _locationService = locationService ?? throw new ArgumentNullException(nameof(locationService));
         _orderService = orderService ?? throw new ArgumentNullException(nameof(orderService));
@@ -78,11 +82,12 @@ public class GetReservationsForUserHandler : IApiRequestHandler
         IEnumerable<Reservation> reservations = await _reservationRepository.GetReservationsByWaiterIdAsync(userId);
 
         var result = new List<ReservationResponse>();
+        var tables = new RequestTableCache(_tableRepository); // a waiter's reservations repeat the same tables
         foreach (var reservation in reservations)
         {
             try
             {
-                var response = await ConvertToResponse(reservation);
+                var response = await ConvertToResponse(reservation, tables);
                 result.Add(response);
             }
             catch (Exception ex)
@@ -101,6 +106,7 @@ public class GetReservationsForUserHandler : IApiRequestHandler
         {
             var reservations = await _reservationRepository.GetReservationsByCustomerIdAsync(userId);
             var result = new List<ReservationResponse>();
+            var tables = new RequestTableCache(_tableRepository);
 
             foreach (var reservation in reservations)
             {
@@ -108,7 +114,7 @@ public class GetReservationsForUserHandler : IApiRequestHandler
                 {
                     var fullReservation = await _reservationRepository.GetReservationByIdAsync(reservation.Id) ?? reservation;
 
-                    var response = await ConvertToResponse(fullReservation);
+                    var response = await ConvertToResponse(fullReservation, tables);
                     result.Add(response);
                 }
                 catch (Exception ex)
@@ -127,7 +133,7 @@ public class GetReservationsForUserHandler : IApiRequestHandler
         }
     }
 
-    private async Task<ReservationResponse> ConvertToResponse(Reservation reservation)
+    private async Task<ReservationResponse> ConvertToResponse(Reservation reservation, RequestTableCache tables)
     {
         try
         {
@@ -142,7 +148,9 @@ public class GetReservationsForUserHandler : IApiRequestHandler
                     guestInviteLinkAvailable = groupReservation.Status == GroupReservationStatus.Open;
             }
 
-            return ReservationMapper.ToReservationResponse(reservation, location.Address, reservationOrder, guestInviteLinkAvailable: guestInviteLinkAvailable);
+            var table = await tables.GetAsync(reservation.TableId);
+
+            return ReservationMapper.ToReservationResponse(reservation, location.Address, reservationOrder, guestInviteLinkAvailable: guestInviteLinkAvailable, table: table);
         }
         catch (Exception ex)
         {

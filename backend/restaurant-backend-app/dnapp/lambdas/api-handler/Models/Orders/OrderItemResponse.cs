@@ -1,4 +1,5 @@
-﻿using APIHandler.Models.Dishes;
+﻿using APIHandler.Constants.Orders;
+using APIHandler.Models.Dishes;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -11,6 +12,14 @@ public class OrderItemResponse
 
     [JsonPropertyName("quantity")]
     public int Quantity { get; set; }
+
+    /// <summary>
+    /// State of the order line as a number (0 Pending, 1 Confirmed, 2 Canceled — <see cref="OrderItemState"/>), as the
+    /// frontend expects it. Set for order lines (GET/POST /orders); omitted in group snapshots, which have no line state.
+    /// </summary>
+    [JsonPropertyName("state")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OrderItemState? State { get; set; }
 
     /// <summary>Who ordered the line (split bill). Only for lines the group submit filled; otherwise the field is omitted.</summary>
     [JsonPropertyName("guests")]

@@ -8,6 +8,7 @@ using APIHandler.Helpers;
 using APIHandler.Mappers;
 using APIHandler.Models.Orders;
 using APIHandler.Models.Users;
+using APIHandler.Repositories.Tables;
 using APIHandler.Services.Dishes;
 using APIHandler.Services.Locations;
 using APIHandler.Services.Orders;
@@ -26,13 +27,16 @@ public class CreateOrderHandler : IApiRequestHandler
     private readonly IReservationService _reservationService;
     private readonly ILocationService _locationService;
     private readonly IOrderService _orderService;
+    private readonly ITableRepository _tableRepository;
 
     public CreateOrderHandler(
         IDishService dishService,
         IReservationService reservationService,
         ILocationService locationService,
-        IOrderService orderService)
+        IOrderService orderService,
+        ITableRepository tableRepository)
     {
+        _tableRepository = tableRepository ?? throw new ArgumentNullException(nameof(tableRepository));
         _dishService = dishService ?? throw new ArgumentNullException(nameof(dishService));
         _reservationService = reservationService ?? throw new ArgumentNullException(nameof(reservationService));
         _locationService = locationService ?? throw new ArgumentNullException(nameof(locationService));
@@ -91,7 +95,9 @@ public class CreateOrderHandler : IApiRequestHandler
 
             var dishes = await LoadDishesAsync(order.Dishes);
 
-            return ResponseBuilder.CreateSuccessResponse(OrderMapper.ToOrderResponse(order, dishes), 201);
+            var table = await _tableRepository.TryGetTableAsync(reservation.TableId);
+
+            return ResponseBuilder.CreateSuccessResponse(OrderMapper.ToOrderResponse(order, dishes, reservation, table), 201);
         }
         catch (Exception ex)
         {
@@ -132,7 +138,9 @@ public class CreateOrderHandler : IApiRequestHandler
 
             var dishes = await LoadDishesAsync(order.Dishes);
 
-            return ResponseBuilder.CreateSuccessResponse(OrderMapper.ToOrderResponse(order, dishes), 201);
+            var table = await _tableRepository.TryGetTableAsync(reservation.TableId);
+
+            return ResponseBuilder.CreateSuccessResponse(OrderMapper.ToOrderResponse(order, dishes, reservation, table), 201);
         }
         catch (Exception ex)
         {

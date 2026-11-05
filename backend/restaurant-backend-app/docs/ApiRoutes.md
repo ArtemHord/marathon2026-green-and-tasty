@@ -462,9 +462,15 @@ Response: `201 Created`
   "waiterId": "string",
   "locationAddress": "string",
   "restaurantName": "Green & Tasty",
-  "hasSubmittedPreOrder": false
+  "hasSubmittedPreOrder": false,
+  "tableNumber": 7,
+  "tableName": "Table 7"
 }
 ```
+
+`tableNumber` / `tableName` (`"Table {tableNumber}"`) are in every reservation response — `POST`, `GET` (list and by id),
+`PUT /reservations`, `PATCH …/table` (the new table). `tableId` stays the table's UUID. Both fields are omitted if the table
+cannot be loaded (the reservation is still returned). `startTime`/`endTime` are UTC; display them in the viewer's time zone.
 
 ### `GET` /reservations
 Response: `200 OK`
@@ -481,7 +487,9 @@ Response: `200 OK`
     "waiterId": "string",
     "locationAddress": "string",
     "restaurantName": "Green & Tasty",
-    "hasSubmittedPreOrder": false
+    "hasSubmittedPreOrder": false,
+    "tableNumber": 7,
+    "tableName": "Table 7"
   }
 ]
 ```
@@ -500,7 +508,9 @@ Response: `200 OK`
   "waiterId": "string",
   "locationAddress": "string",
   "restaurantName": "Green & Tasty",
-  "hasSubmittedPreOrder": false
+  "hasSubmittedPreOrder": false,
+  "tableNumber": 7,
+  "tableName": "Table 7"
 }
 ```
 
@@ -612,7 +622,9 @@ Response: `200 OK`
   "waiterId": "string",
   "locationAddress": "string",
   "restaurantName": "Green & Tasty",
-  "hasSubmittedPreOrder": false
+  "hasSubmittedPreOrder": false,
+  "tableNumber": 7,
+  "tableName": "Table 7"
 }
 ```
 
@@ -917,6 +929,30 @@ Response: `200 OK`
     }
   ],
   "status": "Created"
+}
+```
+
+Fields added after manual QA (existing fields unchanged):
+- `orderItems[].state` — number, state of the order line: `0` Pending, `1` Confirmed, `2` Canceled (the Cart showed
+  "(Unknown)" and the waiter page could not disable Confirm/Cancel because it was missing). Only order responses have it —
+  group snapshot items (`GET /guest/groups/{id}/sessions`) do not.
+- `reservationStartTime` / `reservationEndTime` — the reservation's **current** times, ISO 8601 UTC (`…Z`), to be formatted
+  in the viewer's time zone like reservation cards do with `startTime`. `reservationTime` is a text snapshot made when the order
+  was created, formatted in the server's time zone (UTC) and not updated when the reservation is edited — so it shows UTC
+  ("an hour earlier" for a UTC+1 viewer).
+- `tableNumber` / `tableName` (`"Table 7"`) of the reserved table.
+The reservation/table fields are filled in `GET /orders/{reservationId}`, `GET /orders` and the `POST /orders` response and are
+omitted if the reservation or table cannot be loaded.
+```json
+{
+  "orderId": "string", "reservationId": "string", "reservationAddress": "string",
+  "reservationTime": "Mar 10, 2027, 1:00 PM - 2:30 PM",
+  "orderItems": [ { "dish": { "id": "string", "...": "DishResponse" }, "quantity": 2, "state": 0 } ],
+  "status": 3,
+  "reservationStartTime": "2027-03-10T13:00:00Z",
+  "reservationEndTime": "2027-03-10T14:30:00Z",
+  "tableNumber": 7,
+  "tableName": "Table 7"
 }
 ```
 

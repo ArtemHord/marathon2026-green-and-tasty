@@ -104,7 +104,8 @@ public class EditReservationHandler : IApiRequestHandler
             return ResponseBuilder.CreateErrorResponse(404, "Location not foun.d", context.Logger);
         }
 
-        var response = ReservationMapper.ToReservationResponse(reservation, location.Address);
+        // tableNumber/tableName as in GET /reservations: the edit modal shows the table number, not the tableId (UUID)
+        var response = ReservationMapper.ToReservationResponse(reservation, location.Address, table: table);
         return ResponseBuilder.CreateSuccessResponse(response);
     }
 
