@@ -86,7 +86,14 @@ step_frontend() {
   npm ci
   BACKEND_URL="$url" npm run build
   log "Синхронізую dist → s3://$bucket"
-  aws s3 sync dist/restaurant-frontend-app/browser "s3://$bucket/" --delete
+  local dist="dist/restaurant-frontend-app/browser"
+  # Cache-Control: хешовані бандли Angular (*.js, *.css, media/) — рік immutable;
+  # решта (assets/, favicon) — доба; index.html — no-cache, щоб новий деплой підхоплювався одразу.
+  aws s3 sync "$dist" "s3://$bucket/" --delete --exclude '*' --include '*.js' --include '*.css' --include 'media/*' \
+    --cache-control 'public, max-age=31536000, immutable'
+  aws s3 sync "$dist" "s3://$bucket/" --delete --exclude '*.js' --exclude '*.css' --exclude 'media/*' --exclude 'index.html' \
+    --cache-control 'public, max-age=86400'
+  aws s3 cp "$dist/index.html" "s3://$bucket/index.html" --cache-control 'no-cache'
   local dist_id; dist_id="$(cd "$TF_DIR" && terraform output -raw cloudfront_distribution_id)"
   aws cloudfront create-invalidation --distribution-id "$dist_id" --paths '/*' >/dev/null
   log "CloudFront invalidation запущено (1–3 хв до оновлення)"

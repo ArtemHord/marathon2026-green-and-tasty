@@ -24,6 +24,12 @@ resource "aws_cloudfront_distribution" "frontend" {
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
 
+    # Без цього TTL = 0: кожен запит ревалідується на S3-оригіні в us-west-2 (~0.7–1.5 с із Європи).
+    # Кешувати безпечно: deploy.sh frontend після sync робить invalidation '/*'.
+    min_ttl     = 0
+    default_ttl = 86400    # 1 день для файлів без Cache-Control
+    max_ttl     = 31536000 # хешовані бандли deploy.sh вантажить з max-age=1 рік, immutable
+
     forwarded_values {
       query_string = false
       cookies {
