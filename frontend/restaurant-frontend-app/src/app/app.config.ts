@@ -1,11 +1,10 @@
-import { ApplicationConfig, isDevMode, provideAppInitializer, provideZoneChangeDetection } from '@angular/core';
+import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/http';
 import { tokenInterceptor } from './auth/token.interceptor';
-import { groupOrdersMockInterceptor } from './shared/mocks/group-orders/group-orders-mock.interceptor';
-import { applyDemoLoginFromUrl } from './shared/mocks/auth/demo-auth';
+import { DEMO_INTERCEPTORS, provideDemoLogin } from './shared/mocks/demo-mode';
 import { provideDaterangepickerLocale } from 'ngx-daterangepicker-bootstrap';
 
 import { environment } from '../environments/environment';
@@ -13,16 +12,14 @@ import { API_BASE_URL } from './shared/config/api-base-url.token';
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    // DEV-ONLY: ?demo у будь-якій адресі — мок-логін як Owner демо-бронювання (домашка, рівні 1–2).
-    provideAppInitializer(() => {
-      if (isDevMode()) applyDemoLoginFromUrl();
-    }),
+    // Демо (?demo + мок demo-reservation) — у dev і в production, див. shared/mocks/demo-mode.ts
+    provideDemoLogin(),
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(
       withXhr(),
-      // DEV-ONLY: мок групового pre-order для demo-reservation (домашка). У production не реєструється.
-      withInterceptors([tokenInterceptor, ...(isDevMode() ? [groupOrdersMockInterceptor] : [])]),
+      // мок групового pre-order відповідає лише на demo-ідентифікатори, решта запитів — на справжній API
+      withInterceptors([tokenInterceptor, ...DEMO_INTERCEPTORS]),
     ),
     provideDaterangepickerLocale({
       separator: ' - ',

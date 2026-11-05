@@ -17,6 +17,10 @@ export interface Reservation {
   preOrder?: Order;
   preOrders?: Order[];
   guestInviteLinkAvailable?: boolean;
+  /** Номер столу (tableId — UUID). Немає, якщо бекенд не зміг завантажити стіл. */
+  tableNumber?: number;
+  /** Готовий підпис «Table 7». */
+  tableName?: string;
 }
 
 export enum ReservationStatus {
@@ -37,6 +41,7 @@ export interface ReservationCustomer {
   locationAddress: string;
   feedback?: FeedbackReservationResponseItem;
   tableName?: string;
+  tableNumber?: number;
   customerId?: string;
   waiterId: string;
   hasSubmittedPreOrder?: boolean;

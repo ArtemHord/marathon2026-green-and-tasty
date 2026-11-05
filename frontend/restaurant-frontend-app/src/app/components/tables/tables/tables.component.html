@@ -167,6 +167,8 @@
 
 @if (showReservationConfirmed && reservation) {
   <app-reservation-confirmed
+    mode="updated"
+    [tableNumber]="selectedTable?.tableNumber"
     [reservation]="reservation"
     (closed)="onCloseReservationConfirmed()"
     (editReservation)="onEditReservation()"
@@ -184,6 +186,7 @@
 @if (showEditReservationModal) {
   <app-make-reservation
     title="Edit Reservation"
+    mode="edit"
     [table]="selectedTable!"
     [locationName]="selectedLocationName"
     [guests]="reservation?.guestCount || 1"

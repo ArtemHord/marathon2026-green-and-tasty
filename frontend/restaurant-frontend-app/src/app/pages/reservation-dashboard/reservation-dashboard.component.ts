@@ -37,6 +37,8 @@ import { LocationsService } from '@app/services/locations/locations.service';
 import { PreOrdersService } from '@app/services/pre-orders/pre-orders.service';
 import { ReservationService } from '@app/services/reservation/reservation.service';
 import { TableService } from '@app/services/table/table.service';
+import { ToastService } from '@app/services/toast/toast.service';
+import { RESERVATION_UPDATED_MESSAGE } from '@app/shared/constants/reservation-messages';
 import { Roles } from '@app/shared/constants/roles';
 import { HeaderComponent } from '@app/shared/custom-components/header/header.component';
 import {
@@ -73,6 +75,7 @@ export class ReservationDashboardComponent implements OnInit {
 
   private readonly tableService = inject(TableService);
   private readonly locationsService = inject(LocationsService);
+  private readonly toastService = inject(ToastService);
   private readonly ordersService = inject(PreOrdersService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -127,6 +130,8 @@ export class ReservationDashboardComponent implements OnInit {
       return {
         id: reservation.id,
         tableId: reservation.tableId,
+        tableNumber: reservation.tableNumber,
+        tableName: reservation.tableName,
         startTime: reservation.startTime,
         endTime: reservation.endTime,
         guestCount: reservation.guestCount,
@@ -287,6 +292,7 @@ export class ReservationDashboardComponent implements OnInit {
             id: reservation.tableId,
             tableNumber:
               matchingTable?.tableNumber ??
+              reservation.tableNumber ??
               this.extractTableNumber(
                 reservation.tableName,
               ),
@@ -383,6 +389,7 @@ export class ReservationDashboardComponent implements OnInit {
 
           this.showEditReservationModal.set(false);
           this.showEditReservationConfirmed.set(true);
+          this.toastService.success(RESERVATION_UPDATED_MESSAGE);
         },
         error: (error) => {
           console.error(

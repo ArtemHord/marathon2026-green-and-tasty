@@ -12,10 +12,8 @@
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
-
-  @media (max-width: 500px) {
-    width: calc(100% - 2rem);
-  }
+  // without border-box the padding made the backdrop 100% + 2rem wide and pushed the modal off-centre
+  box-sizing: border-box;
 }
 
 .modal-container {
@@ -29,10 +27,12 @@
   gap: 40px;
   width: 100%;
   box-sizing: border-box;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   @media (max-width: 500px) {
     padding: 0.875rem;
-    width: 90%;
-    border-radius: 0;
+    gap: 24px;
+    border-radius: 1rem;
   }
 }
 

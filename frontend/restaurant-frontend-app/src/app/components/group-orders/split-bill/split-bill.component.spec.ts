@@ -112,6 +112,39 @@ describe('SplitBillComponent', () => {
       expect(element.textContent).toContain('1 canceled dish is not included in the split.');
     });
 
+    it('emits (loaded) with the response — the page takes Grand Total from it', () => {
+      TestBed.configureTestingModule({
+        imports: [SplitBillComponent],
+        providers: [
+          { provide: GroupOrdersService, useValue: service },
+          { provide: ToastService, useValue: toast },
+        ],
+      });
+      const fixture = TestBed.createComponent(SplitBillComponent);
+      const emitted: BillSplitResponse[] = [];
+      fixture.componentInstance.loaded.subscribe((split) => emitted.push(split));
+      fixture.componentRef.setInput('reservationId', 'res-1');
+      fixture.detectChanges();
+      expect(emitted).toEqual([SPLIT]);
+    });
+
+    it('does not emit (loaded) on error', () => {
+      service.getBillSplit$.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      TestBed.configureTestingModule({
+        imports: [SplitBillComponent],
+        providers: [
+          { provide: GroupOrdersService, useValue: service },
+          { provide: ToastService, useValue: toast },
+        ],
+      });
+      const fixture = TestBed.createComponent(SplitBillComponent);
+      const loadedSpy = jasmine.createSpy('loaded');
+      fixture.componentInstance.loaded.subscribe(loadedSpy);
+      fixture.componentRef.setInput('reservationId', 'res-1');
+      fixture.detectChanges();
+      expect(loadedSpy).not.toHaveBeenCalled();
+    });
+
     it('«Copy summary» has an aria-label that contains the visible text', () => {
       const { element } = create();
       const button = buttonByText(element, 'Copy summary')!;

@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   input,
   output,
   signal,
@@ -12,6 +13,7 @@ import {
   ReservationStatus,
 } from '@app/models/reservations/reservation.model';
 import { CustomButtonComponent } from '@app/shared/custom-components/custom-button/custom-button.component';
+import { ReservationConfirmationMode } from './models';
 
 @Component({
   selector: 'app-reservation-confirmed',
@@ -30,6 +32,10 @@ import { CustomButtonComponent } from '@app/shared/custom-components/custom-butt
 export class ReservationConfirmedComponent {
   readonly reservation = input.required<Reservation>();
   readonly customClass = input('');
+  /** 'updated' — після редагування бронювання (інші заголовок і текст). */
+  readonly mode = input<ReservationConfirmationMode>('created');
+  /** Запасний номер столу, якщо API не віддав tableName/tableNumber. reservation.tableId — UUID, його не показуємо. */
+  readonly tableNumber = input<number | null | undefined>(null);
 
   readonly closed = output<void>();
   readonly editReservation = output<void>();
@@ -38,6 +44,19 @@ export class ReservationConfirmedComponent {
   readonly isFading = signal(false);
 
   protected readonly ReservationStatus = ReservationStatus;
+
+  protected readonly title = computed(() =>
+    this.mode() === 'updated' ? 'Reservation Updated!' : 'Reservation Confirmed!',
+  );
+  protected readonly resultText = computed(() =>
+    this.mode() === 'updated' ? 'has been successfully updated.' : 'has been successfully made.',
+  );
+  /** reservation.tableName («Table 7») → reservation.tableNumber → номер від батька; UUID не показуємо. */
+  protected readonly tableLabel = computed(() => {
+    const reservation = this.reservation();
+    const tableNumber = reservation.tableNumber || this.tableNumber();
+    return reservation.tableName || (tableNumber ? `Table ${tableNumber}` : '');
+  });
 
   onClose(): void {
     if (this.isFading()) {

@@ -196,6 +196,15 @@
       }
     }
 
+    @if (canOpenGroupOrder()) {
+      <a
+        class="button button--secondary button--large"
+        [routerLink]="groupOrderLink()"
+      >
+        Group Pre-Order
+      </a>
+    }
+
     @if (role() === Roles.CUSTOMER) {
       @if (
         r().status !==

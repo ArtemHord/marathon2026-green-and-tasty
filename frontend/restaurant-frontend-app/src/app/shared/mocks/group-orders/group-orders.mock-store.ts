@@ -1,3 +1,4 @@
+import { BillSplitResponse } from '@app/models/group-orders/bill-split.model';
 import { Participant } from '@app/models/group-orders/participant.model';
 import { GroupSessionsResponse } from '@app/models/group-orders/group-sessions-response.model';
 import { GroupReservationStatus, GroupStatusResponse } from '@app/models/group-orders/group-status.model';
@@ -5,7 +6,7 @@ import { SubmittedDish } from '@app/models/group-orders/submit-group-pre-order.m
 import { GuestInvite } from '@app/models/reservations/guest-invite.model';
 
 /**
- * DEV-ONLY in-memory «бекенд» для групового pre-order.
+ * In-memory «бекенд» для групового pre-order демо-бронювання (dev і production, див. shared/mocks/demo-mode.ts).
  * Повторює правила з homework-backend.md. Скидається після перезавантаження сторінки.
  */
 export const DEMO_RESERVATION_ID = 'demo-reservation';
@@ -88,6 +89,27 @@ export class GroupOrdersMockStore {
 
     this.status = 'Submitted';
     return [...merged].map(([dishId, quantity]) => ({ dishId, quantity }));
+  }
+
+  /** GET /reservations/{id}/bill-split: лише після submit (до того order ще немає → 404). */
+  billSplit(): BillSplitResponse {
+    if (this.status !== 'Submitted') throw new MockHttpError(404, 'Order not found for this reservation.');
+    const participants = this.participants
+      .filter((p) => p.isSubmitted)
+      .map((p) => ({
+        guestSessionId: p.id,
+        name: p.name,
+        type: p.type,
+        items: p.items.map((item) => ({
+          dishId: item.dish.id,
+          name: item.dish.name,
+          quantity: item.quantity,
+          price: item.dish.price,
+          subtotal: item.dish.price * item.quantity,
+        })),
+        total: sum(p),
+      }));
+    return { participants, total: participants.reduce((acc, p) => acc + p.total, 0), excludedCanceled: 0 };
   }
 
   remove(guestSessionId: string): GroupSessionsResponse {

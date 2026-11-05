@@ -32,7 +32,10 @@
   background-color: color.$neutral-100;
   border: 1px solid color.$shadow;
   border-radius: 1.5rem;
-  width: 25%;
+  // was width: 25% — at ~1000-1400 px the two buttons did not fit and overflowed the modal
+  width: min(31rem, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -40,8 +43,8 @@
 
   @media (max-width: 460px) {
     width: calc(100% - 1rem);
-    padding: 0.5rem;
-    border-radius: 0;
+    padding: 1rem;
+    border-radius: 1rem;
     margin-inline: 0.5rem;
   }
 }
@@ -77,8 +80,21 @@
 .bold-text {
   font-weight: 600;
 }
-.confirmed-buttons{
+.confirmed-buttons {
   display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
   margin-top: 20px;
   justify-content: space-between;
+
+  app-custom-button {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  // the inner .button is nowrap — let it fill its host and wrap text instead of overflowing
+  ::ng-deep .custom-button {
+    width: 100%;
+    white-space: normal;
+  }
 }

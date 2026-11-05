@@ -32,3 +32,26 @@ export function formatBillSplitSummary(split: BillSplitResponse): string {
   lines.push(`Total — ${formatMoney(split.total)}`);
   return lines.join('\n');
 }
+
+/** Позиція order, зібрана з часток усіх учасників (для консолідованого списку після відправки). */
+export interface BillSplitDishTotal {
+  dishId: string;
+  name: string;
+  quantity: number;
+  amount: number;
+}
+
+/** Агрегує items усіх учасників по dishId у порядку першої появи. Вхідні дані не змінюються. */
+export function aggregateBillSplit(split: BillSplitResponse): BillSplitDishTotal[] {
+  const byDish = new Map<string, BillSplitDishTotal>();
+  for (const item of split.participants.flatMap((person) => person.items)) {
+    const existing = byDish.get(item.dishId);
+    byDish.set(item.dishId, {
+      dishId: item.dishId,
+      name: item.name,
+      quantity: (existing?.quantity ?? 0) + item.quantity,
+      amount: (existing?.amount ?? 0) + item.subtotal,
+    });
+  }
+  return [...byDish.values()];
+}

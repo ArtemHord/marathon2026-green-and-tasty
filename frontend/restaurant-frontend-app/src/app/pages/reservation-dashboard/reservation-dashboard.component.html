@@ -52,6 +52,7 @@
   ) {
   <app-make-reservation
     title="Edit Reservation"
+    mode="edit"
     [table]="selectedTable()!"
     [guests]="selectedReservation()!.guestCount"
     [selectedTimeRange]="selectedTimeRange()!"
@@ -71,6 +72,8 @@
   selectedReservationAsReservation()
   ) {
   <app-reservation-confirmed
+    mode="updated"
+    [tableNumber]="selectedTable()?.tableNumber"
     [reservation]="selectedReservationAsReservation()!"
     (closed)="closeReservationConfirmed()"
     (editReservation)="editConfirmedReservation()"

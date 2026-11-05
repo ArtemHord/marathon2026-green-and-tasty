@@ -21,6 +21,7 @@ import {
 } from 'rxjs';
 import { ParticipantCardComponent } from '@app/components/group-orders/participant-card/participant-card.component';
 import { SplitBillComponent } from '@app/components/group-orders/split-bill/split-bill.component';
+import { BillSplitResponse } from '@app/models/group-orders/bill-split.model';
 import { GroupSessionsResponse } from '@app/models/group-orders/group-sessions-response.model';
 import { GroupReservationStatus } from '@app/models/group-orders/group-status.model';
 import { Participant } from '@app/models/group-orders/participant.model';
@@ -28,6 +29,7 @@ import { GuestInvite } from '@app/models/reservations/guest-invite.model';
 import { GroupOrdersService } from '@app/services/group-orders/group-orders.service';
 import { ToastService } from '@app/services/toast/toast.service';
 import { ModalComponent } from '@app/shared/custom-components/modal/modal.component';
+import { aggregateBillSplit } from '@app/shared/helpers/bill-split-helpers';
 import { consolidatePreOrder } from '@app/shared/helpers/consolidate-pre-order';
 import { ConsolidatedLine, GroupOrderLoadState } from './models';
 
@@ -70,21 +72,37 @@ export class GroupOrderPageComponent {
   readonly refreshing = signal(false);
   readonly syncFailed = signal(false);
 
+  /** Розбивка з order (приходить із блоку Split bill у стані Sent). null — ще не завантажена / помилка / 404. */
+  readonly billSplit = signal<BillSplitResponse | null>(null);
+
   readonly removeTarget = signal<Participant | null>(null);
   readonly removing = signal(false);
 
   // --- похідне ---
   readonly participants = computed(() => this.sessions()?.participants ?? []);
   readonly consolidated = computed(() => consolidatePreOrder(this.participants()));
-  /** Лише підтверджені кошики — це те, що піде в замовлення ресторану. */
-  readonly grandTotal = computed(() => this.consolidated().total);
-  readonly consolidatedLines = computed<ConsolidatedLine[]>(() =>
-    this.consolidated().items.map((item) => ({
+  /**
+   * Після відправки (Sent) показуємо те, що реально в order: дані bill-split, де вже немає страв,
+   * скасованих офіціантом. Поки розбивку не завантажено (або помилка) — старий розрахунок із кошиків.
+   */
+  private readonly orderSplit = computed(() => (this.isSent() ? this.billSplit() : null));
+  /** Open: лише підтверджені кошики — це те, що піде в замовлення ресторану. */
+  readonly grandTotal = computed(() => this.orderSplit()?.total ?? this.consolidated().total);
+  readonly consolidatedLines = computed<ConsolidatedLine[]>(() => {
+    const split = this.orderSplit();
+    if (split) {
+      return aggregateBillSplit(split).map((line) => ({
+        dishId: line.dishId,
+        label: `${line.name} × ${line.quantity}`,
+        amount: line.amount,
+      }));
+    }
+    return this.consolidated().items.map((item) => ({
       dishId: item.dish.id,
       label: `${item.dish.name} × ${item.quantity}`,
       amount: item.dish.price * item.quantity,
-    })),
-  );
+    }));
+  });
 
   readonly isOpen = computed(() => this.status() === 'Open');
   /**
@@ -137,6 +155,7 @@ export class GroupOrderPageComponent {
     this.loadSub?.unsubscribe();
     this.stopSync();
     this.loadState.set('loading');
+    this.billSplit.set(null);
 
     this.loadSub = this.service
       .getGroupInvite$(this.reservationId)
@@ -178,6 +197,10 @@ export class GroupOrderPageComponent {
           error instanceof HttpErrorResponse && error.status === 404 ? of(null) : throwError(() => error),
         ),
       );
+  }
+
+  onBillSplitLoaded(split: BillSplitResponse): void {
+    this.billSplit.set(split);
   }
 
   // --- фонова синхронізація ---

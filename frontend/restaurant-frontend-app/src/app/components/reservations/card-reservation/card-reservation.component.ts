@@ -8,9 +8,10 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { Params, Router } from '@angular/router';
+import { Params, Router, RouterLink } from '@angular/router';
 
 import { CreateOrderRequest } from '@app/models/cart/create-order-request.model';
+import { WaiterPreOrderState } from '@app/models/orders/order.model';
 import {
   ReservationCustomer,
   ReservationStatusCustomer,
@@ -19,16 +20,12 @@ import { PlaceOrderWaiterComponent } from '@app/components/place-order-waiter/pl
 import { Roles } from '@app/shared/constants/roles';
 import { CustomSelectComponent } from '@app/shared/custom-components/custom-select/custom-select.component';
 
+/** Той самий поріг, що й для Invite Link у reservation-invite-modal. */
+const MIN_GUESTS_FOR_GROUP_ORDER = 2;
+
 interface ReservationStatusView {
   class: string;
   label: string;
-}
-
-interface WaiterPreOrderNavigationData {
-  reservationId: string;
-  createdByName: string;
-  createdByRole: string;
-  tableName: string;
 }
 
 @Component({
@@ -38,6 +35,7 @@ interface WaiterPreOrderNavigationData {
     DatePipe,
     CustomSelectComponent,
     PlaceOrderWaiterComponent,
+    RouterLink,
   ],
   templateUrl: './card-reservation.component.html',
   styleUrl: './card-reservation.component.scss',
@@ -136,6 +134,22 @@ export class CardReservationComponent {
     );
   });
 
+  /**
+   * Group Pre-Order (екран Owner) має сенс, лише коли є кого запрошувати (guestCount ≥ 2 — той самий поріг,
+   * що й для Invite Link) і бронювання ще не скасоване / не завершене.
+   */
+  readonly canOpenGroupOrder = computed(() => {
+    const reservation = this.r();
+    return (
+      this.role() === Roles.CUSTOMER &&
+      reservation.guestCount >= MIN_GUESTS_FOR_GROUP_ORDER &&
+      (reservation.status === ReservationStatusCustomer.Reserved ||
+        reservation.status === ReservationStatusCustomer.InProgress)
+    );
+  });
+
+  readonly groupOrderLink = computed(() => ['/reservations', this.r().id, 'group-order']);
+
   readonly isAnonymous = computed(() => {
     return !this.r().customerId;
   });
@@ -217,14 +231,27 @@ export class CardReservationComponent {
     });
   }
 
+  /**
+   * Підпис столу для сторінки офіціанта («Table 7»). Раніше API бронювань не віддавав tableName → завжди
+   * «Unknown table». Тепер беремо reservation.tableName, а для старого бекенду — підпис із таблиць локації
+   * (selectedTableLabel = «Table 7» на картці офіціанта).
+   */
+  private waiterPreOrderTableName(): string {
+    const fromCard = this.selectedTableLabel().trim();
+    const cardKnowsTable = /^Table\s+[^\s()]+$/i.test(fromCard);
+    return this.r().tableName || (cardKnowsTable ? fromCard : '') || 'Unknown table';
+  }
+
   private navigateToWaiterPreOrder(): void {
     const reservation = this.r();
 
-    const navigationData: WaiterPreOrderNavigationData = {
+    const navigationData: WaiterPreOrderState = {
       reservationId: reservation.id,
       createdByName: this.creatorName(),
       createdByRole: this.creatorRole(),
-      tableName: reservation.tableName || 'Unknown table',
+      tableName: this.waiterPreOrderTableName(),
+      startTime: new Date(reservation.startTime).toISOString(),
+      endTime: new Date(reservation.endTime).toISOString(),
     };
 
     sessionStorage.setItem(

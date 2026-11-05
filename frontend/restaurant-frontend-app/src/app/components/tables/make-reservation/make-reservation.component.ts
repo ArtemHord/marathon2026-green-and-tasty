@@ -3,7 +3,7 @@ import {
   EventEmitter,
   Input,
   Output,
-  ChangeDetectionStrategy, inject,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { CustomButtonComponent } from '@app/shared/custom-components/custom-button/custom-button.component';
@@ -12,7 +12,7 @@ import { CustomSelectComponent } from '@app/shared/custom-components/custom-sele
 import { Table } from '@app/models/tables/table.model';
 import { TimeRange } from '@app/models/tables/time-range.model';
 import { formatTime } from '@app/shared/helpers/date-helpers';
-import {ToastService} from '@app/services/toast/toast.service';
+import { ReservationFormMode } from './models';
 @Component({
   selector: 'app-make-reservation',
   imports: [
@@ -32,8 +32,12 @@ export class MakeReservationComponent {
   @Input() table!: Table;
   @Input() selectedTimeRange!: TimeRange;
   @Input() guests = 1;
+  /** 'edit' — модалка редагування наявного бронювання (інший підзаголовок). */
+  @Input() mode: ReservationFormMode = 'create';
 
-  private toast = inject(ToastService);
+  get subtitlePrefix(): string {
+    return this.mode === 'edit' ? 'You are editing your reservation at' : 'You are making a reservation at';
+  }
 
   @Output() closeModal = new EventEmitter<void>();
   @Output() makeReservation = new EventEmitter<{
@@ -54,7 +58,8 @@ export class MakeReservationComponent {
       timeRange: this.selectedTimeRange,
       guests: this.guests,
     });
-   this.toast.success('Reservation created successfully.', 'Success');
+    // toast про успіх показує батьківський компонент ПІСЛЯ відповіді API (раніше тут завжди був
+    // «Reservation created successfully.» — навіть при редагуванні і ще до запиту)
   }
 
   onClose() {

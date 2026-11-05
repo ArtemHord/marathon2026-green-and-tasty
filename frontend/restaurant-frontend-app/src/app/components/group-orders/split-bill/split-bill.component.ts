@@ -1,6 +1,6 @@
 import { CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { Subscription, defer } from 'rxjs';
 import { BillSplitResponse } from '@app/models/group-orders/bill-split.model';
 import { GroupOrdersService } from '@app/services/group-orders/group-orders.service';
@@ -24,6 +24,8 @@ export class SplitBillComponent implements OnInit {
   private readonly toast = inject(ToastService);
 
   readonly reservationId = input.required<string>();
+  /** Успішно завантажена розбивка — сторінка бере з неї Grand Total і консолідований список (те, що реально в order). */
+  readonly loaded = output<BillSplitResponse>();
 
   private loadSub?: Subscription;
 
@@ -73,6 +75,7 @@ export class SplitBillComponent implements OnInit {
       next: (split) => {
         this.split.set(split);
         this.state.set('ready');
+        this.loaded.emit(split);
       },
       error: (error: unknown) => {
         if (error instanceof HttpErrorResponse && error.status === 404) {

@@ -3,13 +3,13 @@
     <div>
       <div class="modal-header">
         <h2 class="title">{{ title }}</h2>
-        <button class="close-btn" (click)="onClose()">
-          <img src="assets/svg/close.svg" alt="close button" />
+        <button type="button" class="close-btn" aria-label="Close" (click)="onClose()">
+          <img src="assets/svg/close.svg" alt="" aria-hidden="true" />
         </button>
       </div>
 
       <p class="subtitle">
-        You are making a reservation at
+        {{ subtitlePrefix }}
         <span class="body-bold">{{ locationName }}, Table {{ table.tableNumber }}</span>
         for <span class="body-bold">{{ selectedTimeRange.start | date: 'MMM d, y' }}</span
         >.
@@ -67,6 +67,6 @@
       </div>
     </div>
 
-    <app-custom-button (click)="onMakeReservation()">{{ title }}</app-custom-button>
+    <app-custom-button [fullWidth]="true" (click)="onMakeReservation()">{{ title }}</app-custom-button>
   </div>
 </div>

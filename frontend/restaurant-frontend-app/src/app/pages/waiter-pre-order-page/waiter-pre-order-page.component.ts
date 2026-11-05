@@ -4,9 +4,11 @@ import {
   Component,
   inject,
   Input,
+  LOCALE_ID,
   OnInit,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { formatDate } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { OrderItem } from '@app/models/dishes/order-item.model';
 import { DishCardComponent } from '@app/shared/custom-components/dish-card/dish-card.component';
@@ -14,6 +16,7 @@ import { firstValueFrom } from 'rxjs';
 import { WaiterPreOrderState } from '@app/models/orders/order.model';
 import { CustomButtonComponent } from '@app/shared/custom-components/custom-button/custom-button.component';
 import { formatGuestShares } from '@app/shared/helpers/bill-split-helpers';
+import { toTableLabel } from '@app/shared/helpers/table-label';
 
 @Component({
   selector: 'app-waiter-pre-order-page',
@@ -31,6 +34,7 @@ export class WaiterPreOrderPageComponent implements OnInit {
   reservationId = '';
   createdByName = '';
   createdByRole = '';
+  /** Повний підпис столу: «Table 7» / «Unknown table». */
   tableName = '';
   reservationTime = '';
   @Input() customClass = '';
@@ -38,6 +42,7 @@ export class WaiterPreOrderPageComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
+  private readonly locale = inject(LOCALE_ID);
 
   preOrdersService = inject(PreOrdersService);
 
@@ -62,8 +67,9 @@ export class WaiterPreOrderPageComponent implements OnInit {
 
     this.createdByName = data.createdByName;
     this.createdByRole = data.createdByRole;
-    this.tableName = data.tableName;
+    this.tableName = toTableLabel(data.tableName);
     this.reservationId = data.reservationId;
+    const navigationTime = this.formatReservationTime(data.startTime, data.endTime);
 
     firstValueFrom(this.preOrdersService.getByReservationId(data.reservationId))
       .then((order) => {
@@ -72,12 +78,30 @@ export class WaiterPreOrderPageComponent implements OnInit {
 
         this.orderItems = order.orderItems ?? [];
         this.guestLabels = this.buildGuestLabels(this.orderItems);
-        this.reservationTime = order.reservationTime || '';
+        // order.reservationTime — текстовий знімок, відформатований бекендом в UTC → «на годину раніше».
+        // Показуємо ISO-час у локальному часі (як картка): з order, потім із navigation state, потім старий рядок.
+        this.reservationTime =
+          this.formatReservationTime(order.reservationStartTime, order.reservationEndTime) ||
+          navigationTime ||
+          order.reservationTime ||
+          '';
+        // order.tableName уже «Table 7» — без додаткового префікса
+        this.tableName = order.tableName || this.tableName;
         // this.refreshOrder();
       })
       .catch((err) => {
         console.error('Error loading order:', err);
       });
+  }
+
+  /** «Oct 21, 2026, 7:00 PM - 8:30 PM» у часовій зоні браузера; без ISO-часу → ''. */
+  private formatReservationTime(startTime?: string, endTime?: string): string {
+    if (!startTime || !endTime || Number.isNaN(Date.parse(startTime)) || Number.isNaN(Date.parse(endTime))) {
+      return '';
+    }
+    const start = formatDate(startTime, 'MMM dd, y, h:mm a', this.locale);
+    const end = formatDate(endTime, 'h:mm a', this.locale);
+    return `${start} - ${end}`;
   }
 
   private buildGuestLabels(items: OrderItem[]): Record<string, string> {

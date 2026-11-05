@@ -32,6 +32,7 @@ import { Reservation } from '@app/models/reservations/reservation.model';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthenticationService } from '@app/auth/services/authentication.service';
 import { ToastService } from '@app/services/toast/toast.service';
+import { RESERVATION_UPDATED_MESSAGE } from '@app/shared/constants/reservation-messages';
 
 const UNKNOWN_LOCATION_LABEL = 'Location unavailable';
 const ALL_LOCATIONS_LABEL = 'All Locations';
@@ -329,6 +330,7 @@ export class TablesComponent implements OnInit {
         this.reservation = updatedReservation;
         this.showEditReservationModal = false;
         this.showReservationConfirmed = true;
+        this.toastService.success(RESERVATION_UPDATED_MESSAGE);
       });
 
     this.showEditReservationModal = false;

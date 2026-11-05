@@ -15,7 +15,7 @@ const LATENCY_MS = 400;
 export const groupOrdersMockStore = new GroupOrdersMockStore();
 
 /**
- * DEV-ONLY. Перехоплює запити ЛИШЕ для демо-бронювання `demo-reservation` / `demo-group`.
+ * Демо-мок (dev і production, див. shared/mocks/demo-mode.ts). Перехоплює запити ЛИШЕ для демо-бронювання `demo-reservation` / `demo-group`.
  * Усі інші запити йдуть на справжній API без змін.
  * Відкрий: /reservations/demo-reservation/group-order?demo  (?demo — мок-логін, див. shared/mocks/auth/demo-auth.ts)
  */
@@ -53,6 +53,9 @@ export const groupOrdersMockInterceptor: HttpInterceptorFn = (req, next) => {
   if (req.method === 'GET' && path.endsWith(`/guest/groups/${DEMO_GROUP_ID}/status`)) {
     return respond(() => store.groupStatus());
   }
+  if (req.method === 'GET' && path.endsWith(`/reservations/${DEMO_RESERVATION_ID}/bill-split`)) {
+    return respond(() => store.billSplit());
+  }
   if (req.method === 'POST' && path.endsWith(`/group-reservations/${DEMO_GROUP_ID}/submit`)) {
     return respond(() => store.submit((req.body as { reservationId?: string } | null)?.reservationId ?? ''));
   }
@@ -62,7 +65,9 @@ export const groupOrdersMockInterceptor: HttpInterceptorFn = (req, next) => {
   }
 
   // Демо-логін (?demo): справжній API демо-токен не прийме, тож кошик у шапці показуємо порожнім.
-  if (req.method === 'GET' && path.endsWith('/orders') && isDemoAuthorization(req.headers.get('Authorization'))) {
+  // Те саме для сповіщень у шапці: інакше кожні N секунд — 401 і toast «Please log in».
+  const isDemoUser = isDemoAuthorization(req.headers.get('Authorization'));
+  if (req.method === 'GET' && (path.endsWith('/orders') || path.endsWith('/notifications')) && isDemoUser) {
     return respond(() => []);
   }
 

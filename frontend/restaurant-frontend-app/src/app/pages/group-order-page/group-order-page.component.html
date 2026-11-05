@@ -111,7 +111,7 @@
       }
 
       @if (isSent()) {
-        <app-split-bill [reservationId]="reservationId" />
+        <app-split-bill [reservationId]="reservationId" (loaded)="onBillSplitLoaded($event)" />
       }
 
       <footer class="summary">
