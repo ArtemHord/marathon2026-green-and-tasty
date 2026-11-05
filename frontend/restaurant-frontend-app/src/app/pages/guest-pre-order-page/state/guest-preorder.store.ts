@@ -115,6 +115,14 @@ export class GuestPreorderStore {
 
         try {
             const inv = await firstValueFrom(this.guestInviteService.getInvite$(token));
+            // CanJoin describes a NEW guest. A guest who already joined (session saved for this token)
+            // keeps working while the group is Open, even if it is full now.
+            if (inv.CanJoin === false && (!this.hasSavedSession(token) || inv.Status !== 'Open')) {
+                // full / Submitted / Closed group: backend answers 200, but joining is no longer possible
+                this.invite.set(null);
+                this.inviteError.set('expired');
+                return;
+            }
             this.invite.set(inv);
         } catch (error) {
             this.invite.set(null);
@@ -357,6 +365,11 @@ export class GuestPreorderStore {
         } finally {
             this.cartBusy.set(false);
         }
+    }
+
+    private hasSavedSession(ctx: string): boolean {
+        return !!localStorage.getItem(this.key(ctx, 'guestSessionId'))
+            && !!localStorage.getItem(this.key(ctx, 'guestSessionToken'));
     }
 
     private clearStorage(ctx: string) {

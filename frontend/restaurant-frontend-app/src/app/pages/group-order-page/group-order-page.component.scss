@@ -1,0 +1,291 @@
+@use 'app/shared/styles/abstracts/colors' as color;
+@use 'app/shared/styles/abstracts/typography' as typography;
+
+:host {
+  display: block;
+  padding: 40px 24px;
+}
+
+// Figma: 835 px modal → page container with the same paddings.
+.page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 835px;
+  margin: 0 auto;
+  padding: 40px;
+  background: color.$neutral-100;
+  border-radius: 24px;
+  box-shadow: 0 0 10px 4px color.$shadow;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-title {
+  @include typography.h3;
+}
+
+.badge {
+  @include typography.caption;
+  padding: 4px 12px;
+  color: color.$neutral-900;
+  border-radius: 8px;
+  white-space: nowrap;
+
+  &--open {
+    background: color.$neutral-200;
+  }
+
+  &--sent {
+    background: color.$orange-100;
+  }
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 0;
+  list-style: none;
+  border-bottom: 1px solid color.$bg-green;
+}
+
+.meta-item {
+  @include typography.body;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.text-button {
+  @include typography.button-light;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-width: 0 0 1px;
+  border-bottom-color: color.$neutral-900;
+  border-radius: 0;
+  text-decoration: none;
+}
+
+.sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: -12px;
+}
+
+.sync-text {
+  @include typography.caption;
+  color: color.$neutral-600;
+
+  span {
+    color: inherit;
+  }
+
+  &--error {
+    color: color.$red-400;
+  }
+}
+
+// Homework banner — styled like the notification in 01-owner-review.png.
+.notice {
+  @include typography.body;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  background: color.$orange-30;
+  border: 1px solid color.$orange-100;
+  border-radius: 8px;
+}
+
+.notice-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.participants {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  list-style: none;
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 16px;
+  text-align: center;
+  background: color.$neutral-0;
+  border-radius: 12px;
+
+  &--loading {
+    flex-direction: row;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  &--error {
+    border: 1px solid color.$red-400;
+  }
+
+  &--empty {
+    color: color.$neutral-600;
+  }
+}
+
+.state-title {
+  @include typography.h4;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid color.$green-150;
+  border-top-color: color.$green-600;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+// Homework block (not in Figma) — same look as a participant card.
+.consolidated {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: color.$neutral-0;
+  border-radius: 12px;
+}
+
+.consolidated-title {
+  @include typography.h4;
+}
+
+.consolidated-list {
+  list-style: none;
+}
+
+.consolidated-item {
+  @include typography.body-bold;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color.$neutral-100;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.consolidated-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.consolidated-price {
+  white-space: nowrap;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid color.$bg-green;
+}
+
+.grand-total {
+  @include typography.h3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+
+  span {
+    font: inherit;
+  }
+}
+
+.grand-total-value {
+  color: color.$green-800;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  width: 100%;
+}
+
+// Figma: Button L, 44 px high, padding 8 × 24.
+.dialog-button {
+  @include typography.button-l;
+  min-height: 44px;
+  padding: 8px 24px;
+}
+
+// Outline-danger (no such variant in buttons.scss yet).
+.button--danger {
+  color: color.$red-400;
+  background: color.$neutral-0;
+  border-color: color.$red-400;
+
+  &:hover:not(:disabled) {
+    background: color.$red-100;
+  }
+
+  &:disabled {
+    color: color.$neutral-400;
+    border-color: color.$neutral-200;
+  }
+}
+
+@media (max-width: 480px) {
+  :host {
+    padding: 0;
+  }
+
+  .page {
+    gap: 16px;
+    padding: 16px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .participants {
+    gap: 16px;
+  }
+}
