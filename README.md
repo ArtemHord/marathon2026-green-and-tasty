@@ -28,6 +28,8 @@ All Owner endpoints require a Cognito token and check that the caller owns the r
 
 **Frontend (`frontend/restaurant-frontend-app`)** — Owner screen `/reservations/{reservationId}/group-order`: participant cards, consolidated Grand Total from submitted carts, submit confirmation modal, read-only "Sent to Restaurant" state, auto-refresh every 15 s while the group is open ("Updated at…", Refresh, stale-data notice, single timer), Remove Guest dialog. Layout follows `homework-design/` and the Figma spec `homework-design/figma-owner-flow.md`. Demo without backend: `/reservations/demo-reservation/group-order?demo`.
 
+**Own feature — split bill (`docs/features/split-bill.md`)**: the group submit now remembers who ordered what (`guests` on each order line, Owner share included). The waiter's pre-order page shows "Caesar Salad ×3 — Andrii ×2 · Olena ×1"; after the group is sent, the Owner screen shows a **Split bill** block (per-person dishes and totals, canceled dishes excluded) with **Copy summary**. New endpoint `GET /reservations/{reservationId}/bill-split` — reservation owner or the assigned waiter only.
+
 ## How to check it, step by step
 
 1. Sign in as the customer → **Book a Table** → book for 3+ guests.
@@ -35,14 +37,16 @@ All Owner endpoints require a Cognito token and check that the caller owns the r
 3. As the customer add your own pre-order, then open `/reservations/<id>/group-order`: both guests, your dishes under "My Pre-Order", the yellow notice about the guest who hasn't submitted, Grand Total = your dishes + submitted carts only.
 4. Remove the second guest (**Remove Guest** → confirm) — list and totals update. Within 15 s changes made by guests appear without reload.
 5. **Submit Pre-Order** → confirm → "Sent to Restaurant", screen becomes read-only (also after reload).
-6. Sign in as the waiter of that location → the reservation's pre-order contains the merged dishes.
+6. Sign in as the waiter of that location → the reservation's pre-order contains the merged dishes with "who ordered what" under each line.
+7. Back as the Owner (reload the group-order page) → **Split bill**: per-person totals → **Copy summary**. If the waiter cancels a dish, reload — it's excluded from the split.
 
 Automated checks:
 ```bash
-(cd backend/restaurant-backend-app && dotnet test)                     # 617 tests
+(cd backend/restaurant-backend-app && dotnet test)                     # 697 tests
 (cd frontend/restaurant-frontend-app && npm ci && npm run test:hw)     # homework + contract specs
 API_URL=… CUSTOMER_EMAIL=… CUSTOMER_PASSWORD=… OTHER_CUSTOMER_EMAIL=… OTHER_CUSTOMER_PASSWORD=… scripts/e2e-group-preorder.sh
 API_URL=… CUSTOMER_EMAIL=… CUSTOMER_PASSWORD=… WAITER1_EMAIL=… WAITER1_PASSWORD=… scripts/e2e-preorder-regression.sh
+API_URL=… CUSTOMER_EMAIL=… CUSTOMER_PASSWORD=… OTHER_CUSTOMER_EMAIL=… OTHER_CUSTOMER_PASSWORD=… WAITER1_EMAIL=… WAITER1_PASSWORD=… scripts/e2e-split-bill.sh
 scripts/smoke.sh
 ```
 
@@ -57,6 +61,7 @@ scripts/smoke.sh
 ## Docs
 
 - [`docs/features/group-preorder.md`](docs/features/group-preorder.md) — scenario, API contract, decisions, authorization table, limitations
+- [`docs/features/split-bill.md`](docs/features/split-bill.md) — split bill: data model, endpoint, access rules, limitations
 - [`docs/ai-workflow.md`](docs/ai-workflow.md) — how the code was produced by Claude Code agents (orchestrator, backend-dev, frontend-dev, tester, reviewer) and the review log
 
 ---
